@@ -286,6 +286,54 @@ final class CoreBridge: ObservableObject {
         return max(0, item.state.timeOffset / 1000.0)
     }
 
+    // MARK: - Live playback progress (engine Player)
+
+    /// Load the engine Player for the picked stream, so it records progress against the right library
+    /// item. Built from the raw meta_details JSON (the engine wants back the exact Stream + the stream
+    /// and meta requests it gave us). Best-effort: a shape mismatch is a silent no-op, never a crash.
+    func loadEnginePlayer(for stream: CoreStream) {
+        guard let data = stateData("meta_details"),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        let metaItems = object["metaItems"] as? [[String: Any]] ?? []
+        let metaRequest = (metaItems.first { ($0["content"] as? [String: Any])?["type"] as? String == "Ready" }
+                           ?? metaItems.first)?["request"]
+        var rawStream: [String: Any]?
+        var streamRequest: Any?
+        for group in (object["streams"] as? [[String: Any]] ?? []) {
+            guard let content = group["content"] as? [String: Any],
+                  content["type"] as? String == "Ready",
+                  let streams = content["content"] as? [[String: Any]] else { continue }
+            if let match = streams.first(where: { streamMatches($0, stream) }) {
+                rawStream = match; streamRequest = group["request"]; break
+            }
+        }
+        guard let rawStream, let streamRequest, let metaRequest else { return }
+        let selected: [String: Any] = [
+            "stream": rawStream,
+            "streamRequest": streamRequest,
+            "metaRequest": metaRequest,
+            "subtitlesPath": NSNull(),
+        ]
+        dispatch(action: ["action": "Load", "args": ["model": "Player", "args": selected]], field: "player")
+    }
+
+    private func streamMatches(_ raw: [String: Any], _ stream: CoreStream) -> Bool {
+        if let url = stream.url { return raw["url"] as? String == url }
+        if let hash = stream.infoHash { return raw["infoHash"] as? String == hash }
+        if let yt = stream.ytId { return raw["ytId"] as? String == yt }
+        return false
+    }
+
+    /// Report the playback position to the engine Player (in ms), so Continue Watching reflects it live.
+    func reportProgress(timeSeconds: Double, durationSeconds: Double) {
+        guard durationSeconds > 0, timeSeconds >= 0 else { return }
+        let payload: [String: Any] = ["time": Int(timeSeconds * 1000),
+                                      "duration": Int(durationSeconds * 1000),
+                                      "device": "tvOS"]
+        dispatch(action: ["action": "Player", "args": ["action": "TimeChanged", "args": payload]],
+                 field: "player")
+    }
+
     private func dispatchMetaDetails(_ action: [String: Any]) {
         dispatch(action: ["action": "MetaDetails", "args": action], field: "meta_details")
     }
