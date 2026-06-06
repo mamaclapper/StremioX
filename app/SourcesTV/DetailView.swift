@@ -260,7 +260,7 @@ struct CoreStreamList: View {
         if let url = stream.playableURL {
             NavigationLink {
                 TVPlayerView(url: url, title: title, meta: meta)
-                    .task { prepareTorrent(stream) }
+                    .task { core.loadEnginePlayer(for: stream); prepareTorrent(stream) }
             } label: { streamLabel(addon, stream, enabled: true) }
             .buttonStyle(.plain)
         } else {

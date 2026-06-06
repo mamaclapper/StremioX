@@ -70,6 +70,7 @@ struct TVPlayerView: View {
                             if lastSaved < 0 || abs(d - lastSaved) >= 20 {   // persist ~every 20s
                                 lastSaved = d
                                 saveProgress(at: d)
+                                core.reportProgress(timeSeconds: d, durationSeconds: duration)   // live -> engine
                             }
                             if !markedWatched, duration > 0, d / duration >= 0.9, let m = curMeta {
                                 markedWatched = true            // ~90% in → flip the watched marker live
@@ -120,7 +121,11 @@ struct TVPlayerView: View {
                 resumeSeconds = 0   // selftest / no library context, nothing to resume
             }
         }
-        .onDisappear { hideTask?.cancel(); loadTimeout?.cancel(); saveProgress(at: currentTime) }
+        .onDisappear {
+            hideTask?.cancel(); loadTimeout?.cancel()
+            saveProgress(at: currentTime)
+            core.reportProgress(timeSeconds: currentTime, durationSeconds: duration)   // flush final position to the engine
+        }
     }
 
     // MARK: - Control bar
