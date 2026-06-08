@@ -43,10 +43,6 @@ struct TVPlayerView: View {
     @FocusState private var focus: Focus?
     private let plog = Logger(subsystem: "com.stremiox.app", category: "tvplayer")
 
-    /// The video surface is focusable only when no controls/panel are up, so when the bar is shown
-    /// the buttons take the remote, and when hidden any input on the surface reveals the bar.
-    private var controlsHidden: Bool { !showInfo && !showOptions && !loadFailed }
-
     var body: some View {
         ZStack(alignment: .bottom) {
             Color.black.ignoresSafeArea()
@@ -99,8 +95,9 @@ struct TVPlayerView: View {
             if showOptions { optionsPanel }
             if loadFailed { loadErrorOverlay }
         }
-        .focusable(controlsHidden || loadFailed)
+        .focusable()                                      // always a valid focus target, so focus is never dropped
         .focused($focus, equals: .player)
+        .defaultFocus($focus, .play)                      // reliably seed focus into the cover (device-safe)
         .onMoveCommand { _ in showControls() }            // any direction (bar hidden) reveals the bar
         .onTapGesture { showControls() }                  // Select (bar hidden) reveals the bar
         .onPlayPauseCommand { toggle() }
@@ -110,7 +107,8 @@ struct TVPlayerView: View {
         }
         .onAppear {
             if curURL == nil { curURL = url; curTitle = title; curMeta = meta }   // seed from initial
-            showInfo = true; focus = .play; scheduleHide(); startLoadTimeout()
+            showInfo = true; scheduleHide(); startLoadTimeout()
+            DispatchQueue.main.async { focus = .play }    // after the cover's focus env is ready
             if let m = curMeta {
                 if let engineResume = core.engineResumeSeconds(for: m) {
                     resumeSeconds = engineResume; maybeResume()       // engine library = source of truth

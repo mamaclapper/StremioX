@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Shared, system-aligned building blocks: the poster artwork, the focusable poster card used by every
 /// rail and grid, and the empty / not-signed-in state. See Theme.swift for the tokens these use.
@@ -6,28 +7,58 @@ import SwiftUI
 /// Standard poster width across the app. Posters are 2:3, so height is `width * 1.5`.
 let kPosterWidth: CGFloat = 200
 
+/// In-memory poster cache, on top of the shared URLCache (disk). Decoded images, evicted under memory
+/// pressure. Keyed by URL so a poster shown in several rails decodes once.
+private let posterMemoryCache: NSCache<NSURL, UIImage> = {
+    let c = NSCache<NSURL, UIImage>(); c.countLimit = 400; return c
+}()
+
 /// Poster artwork with a warm placeholder and the system card radius. Not focusable on its own;
 /// `PosterCard` wraps it in the focusable button.
+///
+/// Loads via `.task` + a memory/disk cache rather than `AsyncImage`. `AsyncImage` keeps no cache and
+/// cancels in-flight requests during the appear transition without retrying, which left the
+/// first (above-the-fold) rails blank on device; a `.task`-driven load re-runs on the next appear and
+/// hits the cache instantly.
 struct PosterArt: View {
     let poster: String?
     var width: CGFloat = kPosterWidth
+    @State private var image: UIImage?
+    @State private var failed = false
     init(_ poster: String?, width: CGFloat = kPosterWidth) { self.poster = poster; self.width = width }
 
     var body: some View {
-        AsyncImage(url: poster.flatMap { URL(string: $0) }) { phase in
-            switch phase {
-            case .success(let image):
-                image.resizable().aspectRatio(contentMode: .fill)
-            case .empty:
-                Theme.Palette.surface2.overlay(ProgressView().tint(Theme.Palette.textTertiary))
-            default:
+        Group {
+            if let image {
+                Image(uiImage: image).resizable().aspectRatio(contentMode: .fill)
+            } else if failed {
                 Theme.Palette.surface2.overlay(
                     Image(systemName: "film").font(.system(size: 40)).foregroundStyle(Theme.Palette.textTertiary)
                 )
+            } else {
+                Theme.Palette.surface2.overlay(ProgressView().tint(Theme.Palette.textTertiary))
             }
         }
         .frame(width: width, height: width * 1.5)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        .task(id: poster) { await load() }
+    }
+
+    private func load() async {
+        guard let raw = poster, let url = URL(string: raw) else { failed = true; return }   // no poster → film placeholder
+        if let cached = posterMemoryCache.object(forKey: url as NSURL) { image = cached; return }   // instant, no flash
+        var req = URLRequest(url: url)
+        req.cachePolicy = .returnCacheDataElseLoad   // posters are immutable: prefer the shared disk cache
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            guard !Task.isCancelled else { return }
+            if let img = UIImage(data: data) {
+                posterMemoryCache.setObject(img, forKey: url as NSURL)
+                image = img
+            } else { failed = true }
+        } catch {
+            if !Task.isCancelled { failed = true }   // a cancel (scrolled away) is not a failure; the next appear retries
+        }
     }
 }
 
