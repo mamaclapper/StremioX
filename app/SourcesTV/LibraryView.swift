@@ -12,7 +12,8 @@ struct LibraryView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                BrowseHeroBackdrop(model: focusModel, detailsTop: 300)
+                // detailsTop clears the page title plus two filter rows.
+                BrowseHeroBackdrop(model: focusModel, detailsTop: 340)
                 ScrollView {
                     VStack(alignment: .leading, spacing: Theme.Space.md) {
                         Text("Library").screenTitleStyle().padding(.horizontal, Theme.Space.screenEdge)

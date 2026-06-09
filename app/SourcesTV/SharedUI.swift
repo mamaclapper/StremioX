@@ -308,9 +308,6 @@ struct BrowseHeroBackdrop: View {
     /// using `detailsTop`. The rails strip anchors to the same edge, so the two can never collide
     /// even as the tab bar shows or hides and shifts the top safe area.
     var detailsBottom: CGFloat? = nil
-    /// When set, the details block is focusable: press to open the title, and it bridges upward
-    /// focus from the rails to the tab bar.
-    var onSelect: ((FocusedHero) -> Void)? = nil
     @EnvironmentObject private var theme: ThemeManager
 
     var body: some View {
@@ -345,58 +342,35 @@ struct BrowseHeroBackdrop: View {
         }
     }
 
-    @ViewBuilder private func detailsBlock(_ hero: FocusedHero) -> some View {
-        if let onSelect {
-            Button { onSelect(hero) } label: { detailsText(hero) }
-                .buttonStyle(HeroDetailsStyle())
-        } else {
-            detailsText(hero)
+    /// Editorial rhythm: a tight title-meta pairing, then air before the synopsis, so the block
+    /// reads as one composed unit instead of evenly stacked lines.
+    private func detailsBlock(_ hero: FocusedHero) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(hero.title)
+                .font(Theme.Typography.screenTitle)
+                .foregroundStyle(Theme.Palette.textPrimary)
+                .lineLimit(2).minimumScaleFactor(0.7)
+                .shadow(color: .black.opacity(0.5), radius: 12, y: 4)
+            Text(hero.metaLine)
+                .font(Theme.Typography.label)
+                .foregroundStyle(Theme.Palette.textSecondary)
+                .padding(.top, 14)
+            if let genres = hero.genreLine {
+                Text(genres)
+                    .font(Theme.Typography.label)
+                    .foregroundStyle(Theme.Palette.textTertiary)
+                    .padding(.top, 6)
+            }
+            if let overview = hero.overview, !overview.isEmpty {
+                Text(overview)
+                    .font(Theme.Typography.body)
+                    .foregroundStyle(Theme.Palette.textSecondary)
+                    .lineLimit(3).lineSpacing(5)
+                    .frame(maxWidth: 740, alignment: .leading)
+                    .padding(.top, 18)
+            }
         }
-    }
-
-    private func detailsText(_ hero: FocusedHero) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Space.sm) {
-                        Text(hero.title)
-                            .font(Theme.Typography.screenTitle)
-                            .foregroundStyle(Theme.Palette.textPrimary)
-                            .lineLimit(2).minimumScaleFactor(0.7)
-                            .shadow(color: .black.opacity(0.5), radius: 12, y: 4)
-                        Text(hero.metaLine)
-                            .font(Theme.Typography.label)
-                            .foregroundStyle(Theme.Palette.textSecondary)
-                        if let genres = hero.genreLine {
-                            Text(genres)
-                                .font(Theme.Typography.label)
-                                .foregroundStyle(Theme.Palette.textTertiary)
-                        }
-                        if let overview = hero.overview, !overview.isEmpty {
-                            Text(overview)
-                                .font(Theme.Typography.body)
-                                .foregroundStyle(Theme.Palette.textSecondary)
-                                .lineLimit(3).lineSpacing(2)
-                                .padding(.top, 2)
-                        }
-        }
-    }
-}
-
-/// Focus treatment for the hero details button: a gentle lift and brighter title, no chrome, so
-/// it reads as the hero itself being focusable rather than a boxed control.
-private struct HeroDetailsStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HeroDetailsContent(configuration: configuration)
-    }
-
-    private struct HeroDetailsContent: View {
-        let configuration: ButtonStyle.Configuration
-        @Environment(\.isFocused) private var isFocused
-        @EnvironmentObject private var theme: ThemeManager
-
-        var body: some View {
-            configuration.label
-                .scaleEffect(isFocused ? 1.03 : 1.0, anchor: .topLeading)
-                .animation(.spring(response: 0.32, dampingFraction: 0.78), value: isFocused)
-        }
+        .shadow(color: .black.opacity(0.35), radius: 8, y: 2)
     }
 }
 
