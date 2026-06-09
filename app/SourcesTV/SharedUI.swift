@@ -67,6 +67,182 @@ struct PosterArt: View {
 /// `.none` attaches no menu at all.
 enum PosterMenu { case none, continueWatching, catalog, library }
 
+// MARK: - Focused hero (the browse pages' living backdrop)
+
+/// What the browse pages show behind the rails for the title under focus.
+struct FocusedHero: Equatable {
+    let id: String
+    let type: String
+    let title: String
+    let backdrop: String?     // background art, falling back to the poster
+    let metaLine: String      // prebuilt "2026 · ★ 7.6 · Movie" style line
+    let overview: String?
+}
+
+/// The standard Stremio background art for an IMDB-identified title: real 16:9 backdrop art at
+/// screen resolution, instead of a portrait poster stretched across the TV.
+private func metahubBackground(for id: String) -> String? {
+    guard id.hasPrefix("tt") else { return nil }
+    return "https://images.metahub.space/background/big/\(id)/img"
+}
+
+extension CoreMeta {
+    var focusedHero: FocusedHero {
+        var parts: [String] = []
+        if let releaseInfo, !releaseInfo.isEmpty { parts.append(releaseInfo) }
+        if let imdbRating, !imdbRating.isEmpty { parts.append("★ \(imdbRating)") }
+        parts.append(type.capitalized)
+        return FocusedHero(id: id, type: type, title: name,
+                           backdrop: background ?? metahubBackground(for: id) ?? poster,
+                           metaLine: parts.joined(separator: "  ·  "), overview: description)
+    }
+}
+
+extension CoreCWItem {
+    /// Library entries carry no backdrop or synopsis; real backdrop art comes from metahub and the
+    /// synopsis/rating arrive via the model's Cinemeta enrichment a beat later.
+    var focusedHero: FocusedHero {
+        let pct = Int((progress * 100).rounded())
+        let line = pct > 0 ? "\(type.capitalized)  ·  \(pct)% watched" : type.capitalized
+        return FocusedHero(id: id, type: type, title: name,
+                           backdrop: metahubBackground(for: id) ?? poster,
+                           metaLine: line, overview: nil)
+    }
+}
+
+/// Per-page model for the focused hero. Focus changes are debounced so flicking along a rail
+/// settles before the backdrop crossfades, and the rails themselves never rebuild (no `.id`),
+/// so tvOS focus is never dropped. Heroes without a synopsis (library entries) are enriched from
+/// Cinemeta in the background, once per title per session.
+@MainActor final class FocusedItemModel: ObservableObject {
+    @Published private(set) var hero: FocusedHero?
+    /// The text block shows only while focus is in the page's TOP row; deeper rows keep just the
+    /// backdrop art, so the details can never collide with content that scrolled up.
+    @Published private(set) var detailsVisible = true
+    private var pending: Task<Void, Never>?
+    private static var enrichmentCache: [String: FocusedHero] = [:]   // session-wide, across pages
+
+    func focus(_ hero: FocusedHero, showsDetails: Bool = true) {
+        if hero == self.hero {
+            if detailsVisible != showsDetails { detailsVisible = showsDetails }
+            return
+        }
+        pending?.cancel()
+        let resolved = Self.enrichmentCache[hero.id] ?? hero
+        pending = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard !Task.isCancelled else { return }
+            self?.hero = resolved
+            self?.detailsVisible = showsDetails
+            self?.enrichIfNeeded(resolved)
+        }
+    }
+
+    /// First render: show something immediately instead of an empty canvas.
+    func seedIfEmpty(_ hero: FocusedHero?) {
+        guard self.hero == nil, let hero else { return }
+        self.hero = Self.enrichmentCache[hero.id] ?? hero
+        detailsVisible = true
+        enrichIfNeeded(self.hero ?? hero)
+    }
+
+    /// Fill in synopsis / rating / year (and better art) for heroes that came from library data,
+    /// via Cinemeta's public meta endpoint. Cached for the session; applied only if still focused.
+    private func enrichIfNeeded(_ hero: FocusedHero) {
+        guard hero.overview == nil, hero.id.hasPrefix("tt"),
+              Self.enrichmentCache[hero.id] == nil,
+              let url = URL(string: "https://v3-cinemeta.strem.io/meta/\(hero.type)/\(hero.id).json") else { return }
+        Task { [weak self] in
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 6
+            request.cachePolicy = .returnCacheDataElseLoad
+            guard let (data, _) = try? await URLSession.shared.data(for: request),
+                  let response = try? JSONDecoder().decode(CinemetaMetaResponse.self, from: data),
+                  let meta = response.meta else { return }
+            var parts: [String] = []
+            if let year = meta.releaseInfo, !year.isEmpty { parts.append(year) }
+            if let rating = meta.imdbRating, !rating.isEmpty { parts.append("★ \(rating)") }
+            parts.append(hero.metaLine)   // keep the type + progress tail
+            let enriched = FocusedHero(id: hero.id, type: hero.type, title: hero.title,
+                                       backdrop: meta.background ?? hero.backdrop,
+                                       metaLine: parts.joined(separator: "  ·  "),
+                                       overview: meta.description)
+            await MainActor.run {
+                Self.enrichmentCache[hero.id] = enriched
+                guard let self, self.hero?.id == hero.id else { return }
+                self.hero = enriched
+            }
+        }
+    }
+}
+
+private struct CinemetaMetaResponse: Decodable {
+    struct Meta: Decodable {
+        let description: String?
+        let imdbRating: String?
+        let releaseInfo: String?
+        let background: String?
+    }
+    let meta: Meta?
+}
+
+/// Invisible focus probe placed inside a focusable button's label: `isFocused` from the
+/// environment reflects the button's focus (the documented tvOS pattern), and the callback
+/// fires on gain only.
+private struct FocusReporter: View {
+    @Environment(\.isFocused) private var isFocused
+    let onFocus: () -> Void
+    var body: some View {
+        Color.clear.onChange(of: isFocused) { if isFocused { onFocus() } }
+    }
+}
+
+/// The browse pages' background layer: the focused title's artwork at full bleed with a detail
+/// block (title, meta line, synopsis) on the upper-left band. Content scrolls over it.
+struct BrowseHeroBackdrop: View {
+    @ObservedObject var model: FocusedItemModel
+    var detailsTop: CGFloat = 150   // Home: just under the tab bar; grid pages: below their chips
+    @EnvironmentObject private var theme: ThemeManager
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Theme.Palette.canvas.ignoresSafeArea()
+            if let hero = model.hero {
+                FullBleedBackdrop(url: hero.backdrop)
+                    .id(hero.id)
+                    .transition(.opacity)
+                if model.detailsVisible {
+                    VStack(alignment: .leading, spacing: Theme.Space.sm) {
+                        Text(hero.title)
+                            .font(Theme.Typography.screenTitle)
+                            .foregroundStyle(Theme.Palette.textPrimary)
+                            .lineLimit(2).minimumScaleFactor(0.7)
+                            .shadow(color: .black.opacity(0.5), radius: 12, y: 4)
+                        Text(hero.metaLine)
+                            .font(Theme.Typography.label)
+                            .foregroundStyle(Theme.Palette.textSecondary)
+                        if let overview = hero.overview, !overview.isEmpty {
+                            Text(overview)
+                                .font(Theme.Typography.body)
+                                .foregroundStyle(Theme.Palette.textSecondary)
+                                .lineLimit(3).lineSpacing(2)
+                        }
+                    }
+                    .frame(maxWidth: 860, alignment: .leading)
+                    .padding(.leading, Theme.Space.screenEdge)
+                    .padding(.top, detailsTop)
+                    .id("details-\(hero.id)")
+                    .transition(.opacity)
+                }
+            }
+        }
+        .animation(.easeOut(duration: 0.35), value: model.hero?.id)
+        .animation(.easeOut(duration: 0.25), value: model.detailsVisible)
+        // No ignoresSafeArea here: the image layer handles its own full-bleed, and keeping this
+        // container inside the safe area lets the tab bar reclaim focus when you press up at the top.
+    }
+}
+
 /// The focusable poster + title used in every rail and grid. Navigates to the detail page; crafted
 /// focus (scale + ember glow + lift) comes from `CardFocusStyle`. Optional progress stripe for
 /// in-progress titles.
@@ -78,6 +254,7 @@ struct PosterCard: View {
     var progress: Double? = nil
     var width: CGFloat = kPosterWidth
     var menu: PosterMenu = .none
+    var onFocus: (() -> Void)? = nil   // browse pages report focus to drive the hero backdrop
 
     var body: some View {
         if menu == .none {
@@ -105,6 +282,7 @@ struct PosterCard: View {
                     .foregroundStyle(Theme.Palette.textSecondary)
                     .frame(width: width, alignment: .leading)
             }
+            .background { if let onFocus { FocusReporter(onFocus: onFocus) } }
         }
         .buttonStyle(CardFocusStyle())
     }

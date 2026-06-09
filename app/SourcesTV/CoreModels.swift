@@ -83,6 +83,12 @@ struct CoreMeta: Decodable, Identifiable {
     let name: String
     let poster: String?
     let posterShape: String?
+    // Optional preview details most catalog add-ons include; they power the focused-hero
+    // backdrop on the browse pages. All optional so older/sparser add-ons still decode.
+    let background: String?
+    let description: String?
+    let releaseInfo: String?
+    let imdbRating: String?
 }
 
 // MARK: ctx (only what we need: addon manifests for catalog row titles)

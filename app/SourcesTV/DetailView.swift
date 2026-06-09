@@ -379,6 +379,7 @@ struct CoreStreamList: View {
     @EnvironmentObject private var theme: ThemeManager
     @State private var sourceFilter: String? = nil
     @State private var showAllSources = false   // the full ranked list is revealed on demand (Watch-Now first)
+    @State private var showQualityPicker = false   // the visible 4K/1080p/flavor dropdown
     @EnvironmentObject private var presenter: PlayerPresenter   // root-replacement player presentation
 
     var body: some View {
@@ -399,6 +400,18 @@ struct CoreStreamList: View {
                     }
                     .buttonStyle(PrimaryActionStyle())
                     .contextMenu { resolutionMenu(groups) }
+
+                    // The visible quality dropdown: pick a resolution + flavor (Dolby Vision, Remux,
+                    // Atmos, …) and the best matching source plays.
+                    Button { showQualityPicker = true } label: {
+                        Label("Quality", systemImage: "chevron.up.chevron.down")
+                    }
+                    .buttonStyle(ChipButtonStyle())
+                    .confirmationDialog("Pick a quality", isPresented: $showQualityPicker, titleVisibility: .visible) {
+                        ForEach(Array(StreamRanking.qualityOptions(groups).prefix(14)), id: \.label) { option in
+                            Button(option.label) { play(option.stream) }
+                        }
+                    }
 
                     Button { withAnimation { showAllSources.toggle() } } label: {
                         Label(showAllSources ? "Hide sources" : "All sources · \(streamCount)",

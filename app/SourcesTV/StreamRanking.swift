@@ -51,6 +51,35 @@ enum StreamRanking {
             .sorted { score($0.stream) > score($1.stream) }
     }
 
+    /// Distinct choices for the visible quality picker: the best stream per resolution-and-flavor
+    /// combination, labeled the way people actually choose ("4K · Dolby Vision · Remux",
+    /// "1080p · BluRay · Atmos"). Best-first, so the top option is what Watch Now would play.
+    static func qualityOptions(_ groups: [CoreStreamSourceGroup]) -> [(label: String, stream: CoreStream)] {
+        let playable = groups.flatMap { $0.streams }.filter { $0.playableURL != nil }
+        var best: [String: (score: Int, stream: CoreStream)] = [:]
+        for s in playable {
+            let t = qualityText(s)
+            var tags = [qualityLabel(s)]
+            if t.contains("dolby vision") || t.contains("dolbyvision") || t.contains("dovi") || t.contains(" dv ") {
+                tags.append("Dolby Vision")
+            } else if t.contains("hdr") {
+                tags.append("HDR")
+            }
+            if t.contains("remux") { tags.append("Remux") }
+            else if t.contains("bluray") || t.contains("blu-ray") { tags.append("BluRay") }
+            else if t.contains("web") { tags.append("WEB") }
+            if t.contains("atmos") { tags.append("Atmos") }
+            else if t.contains("truehd") { tags.append("TrueHD") }
+            else if t.contains("dts-hd") || t.contains("dts hd") { tags.append("DTS-HD") }
+            let label = tags.joined(separator: " · ")
+            let sc = score(s)
+            if let current = best[label], current.score >= sc { continue }
+            best[label] = (sc, s)
+        }
+        return best.map { (label: $0.key, stream: $0.value.stream) }
+            .sorted { score($0.stream) > score($1.stream) }
+    }
+
     /// A short resolution tag for the Watch-Now button ("4K" / "1080p" / …), or "Best" when unknown.
     static func qualityLabel(_ s: CoreStream) -> String {
         let t = qualityText(s)

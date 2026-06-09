@@ -16,13 +16,17 @@ If it keeps even a handful of Apple users on Stremio, that was the whole point.
 
 ## What it looks like (Apple TV)
 
-Home, with your real Continue Watching and every catalog from your addons:
+Home, with your real Continue Watching and every catalog from your addons. The background is alive: whichever title you focus fills the screen with its artwork and details, and rows fade out underneath it as you browse deeper:
 
 ![Home](docs/screenshots/home.png)
 
 Movie pages are full-bleed: the artwork owns the whole screen, and one press on Watch plays the best source your addons returned (the full ranked list is one button away):
 
 ![Detail](docs/screenshots/detail.png)
+
+Or pick the exact flavor you want. The Quality button lists the best source per resolution and variant, Dolby Vision, DTS-HD, BluRay, Atmos and the rest:
+
+![Quality](docs/screenshots/quality.png)
 
 Episode pages get the same cinematic treatment, with the episode still, air date, runtime, rating, and synopsis over it:
 
@@ -48,7 +52,8 @@ A few things the Apple TV app does:
 
 - Continue Watching and catalogs that match the official app. This was the thing that annoyed me most early on, when the first versions only showed one or two items.
 - Skip intro, recap, and credits. Crowd-sourced timestamps (by IMDB, TMDB, or TVDB id, so every catalog addon works) merged with the file's own chapter markers, with sanity guards so a bad entry can never skip you into the middle of an episode. Cached on device.
-- Watch Now: sources are ranked (cached and direct first, then resolution, remux, HDR) and one press plays the best one. A long press picks a different resolution, and the full per-addon list stays one button away.
+- Watch Now: sources are ranked (cached and direct first, then resolution, remux, HDR) and one press plays the best one. A Quality button lists the best source per resolution and flavor (Dolby Vision, DTS-HD, BluRay, Atmos), and the full per-addon list stays one button away.
+- A living home screen: the focused title fills the background with its artwork, synopsis, and rating (real backdrop art, not stretched posters), on Home, Discover, and Library alike.
 - Full-bleed movie and episode pages: the artwork fills the screen and the details sit over it, instead of a small banner and a black void.
 - The codecs actually work. TrueHD and Atmos, DTS-HD MA, EAC3, HDR and Dolby Vision all play through libmpv, with real track selection (language-grouped, with sync adjustment) instead of silence or a black screen.
 - Eight accent themes plus a true-black OLED mode, and the whole app (including the focused tab) repaints live when you switch.
