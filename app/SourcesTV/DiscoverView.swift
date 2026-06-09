@@ -78,7 +78,8 @@ struct DiscoverView: View {
         } else {
             LazyVGrid(columns: columns, spacing: Theme.Space.xl) {
                 ForEach(items) { item in
-                    PosterCard(title: item.name, poster: item.poster, type: item.type, id: item.id)
+                    PosterCard(title: item.name, poster: item.poster, type: item.type, id: item.id,
+                               menu: .catalog)
                 }
             }
             .padding(.horizontal, Theme.Space.screenEdge)

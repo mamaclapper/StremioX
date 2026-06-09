@@ -65,6 +65,10 @@ struct PosterArt: View {
 /// The focusable poster + title used in every rail and grid. Navigates to the detail page; crafted
 /// focus (scale + ember glow + lift) comes from `CardFocusStyle`. Optional progress stripe for
 /// in-progress titles.
+/// Which long-press (context) menu a `PosterCard` shows. `.continueWatching` offers a dismiss; `.catalog`
+/// offers add-to-library plus mark watched / unwatched; `.none` attaches no menu at all.
+enum PosterMenu { case none, continueWatching, catalog }
+
 struct PosterCard: View {
     let title: String
     let poster: String?
@@ -72,8 +76,17 @@ struct PosterCard: View {
     let id: String
     var progress: Double? = nil
     var width: CGFloat = kPosterWidth
+    var menu: PosterMenu = .none
 
     var body: some View {
+        if menu == .none {
+            cardLink
+        } else {
+            cardLink.contextMenu { menuItems }
+        }
+    }
+
+    private var cardLink: some View {
         NavigationLink {
             DetailView(type: type, id: id)
         } label: {
@@ -93,6 +106,37 @@ struct PosterCard: View {
             }
         }
         .buttonStyle(CardFocusStyle())
+    }
+
+    /// Long-press actions, fired straight at the engine (`CoreBridge.shared`). Continue Watching and the
+    /// catalogs both refresh on their own when the engine re-emits the affected fields.
+    @ViewBuilder private var menuItems: some View {
+        switch menu {
+        case .none:
+            EmptyView()
+        case .continueWatching:
+            Button(role: .destructive) {
+                CoreBridge.shared.dismissFromContinueWatching(id: id)
+            } label: {
+                Label("Remove from Continue Watching", systemImage: "minus.circle")
+            }
+        case .catalog:
+            Button {
+                CoreBridge.shared.addToLibrary(metaId: id)
+            } label: {
+                Label("Add to Library", systemImage: "plus.circle")
+            }
+            Button {
+                CoreBridge.shared.setCatalogWatched(metaId: id, true)
+            } label: {
+                Label("Mark as Watched", systemImage: "checkmark.circle")
+            }
+            Button {
+                CoreBridge.shared.setCatalogWatched(metaId: id, false)
+            } label: {
+                Label("Mark as Unwatched", systemImage: "circle")
+            }
+        }
     }
 }
 

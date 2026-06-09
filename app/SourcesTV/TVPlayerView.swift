@@ -646,7 +646,13 @@ struct TVPlayerView: View {
 
     /// Auto-advance when an episode ends: next episode if there is one, otherwise leave the player.
     private func autoAdvance() {
-        if hasNextEpisode { playNext() } else { saveProgress(at: currentTime); onClose() }
+        if hasNextEpisode { playNext(); return }
+        // Finished (a movie, or the last episode): record the final position, then rewind the title out of
+        // Continue Watching. The engine keeps any item with time_offset > 0 in the rail, so without this a
+        // finished title lingers at its end position forever.
+        saveProgress(at: currentTime)
+        if let m = curMeta { core.finishedWatching(libraryId: m.libraryId) }
+        onClose()
     }
 
     /// Switch to another episode in place: flush progress, resolve a stream through the ENGINE (same path

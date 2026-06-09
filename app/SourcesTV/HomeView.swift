@@ -65,7 +65,8 @@ struct CoreContinueWatchingRow: View {
                 LazyHStack(alignment: .top, spacing: Theme.Space.lg) {
                     ForEach(items) { item in
                         PosterCard(title: item.name, poster: item.poster,
-                                   type: item.type, id: item.id, progress: item.progress)
+                                   type: item.type, id: item.id, progress: item.progress,
+                                   menu: .continueWatching)
                     }
                 }
                 .padding(.horizontal, Theme.Space.screenEdge)
@@ -86,7 +87,8 @@ struct CoreCatalogRowView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: Theme.Space.lg) {
                     ForEach(row.items) { item in
-                        PosterCard(title: item.name, poster: item.poster, type: item.type, id: item.id)
+                        PosterCard(title: item.name, poster: item.poster, type: item.type, id: item.id,
+                                   menu: .catalog)
                     }
                 }
                 .padding(.horizontal, Theme.Space.screenEdge)

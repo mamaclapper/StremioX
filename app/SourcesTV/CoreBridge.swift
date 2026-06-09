@@ -319,6 +319,61 @@ final class CoreBridge: ObservableObject {
         return max(0, item.state.timeOffset / 1000.0)
     }
 
+    // MARK: Library / Continue Watching mutations (Ctx actions; CW + library refresh live via events)
+
+    /// Remove a title from Continue Watching. Stremio auto-adds an item to the library when you start
+    /// playing it, so the CW "dismiss" is a full library removal (the engine sets `removed`), matching the
+    /// reference apps. The engine re-emits `continue_watching_preview`, so the rail updates on its own.
+    func dismissFromContinueWatching(id: String) {
+        dispatchCtx(["action": "RemoveFromLibrary", "args": id])
+    }
+
+    /// Drop a finished title (a movie, or the last episode of a series) out of Continue Watching by
+    /// rewinding its saved position to zero. `is_in_continue_watching()` is just `time_offset > 0`, so a
+    /// title finished at its end position would otherwise linger forever. Rewind keeps the library entry
+    /// (still marked watched) and its new-episode notifications, unlike a full removal.
+    func finishedWatching(libraryId: String) {
+        dispatchCtx(["action": "RewindLibraryItem", "args": libraryId])
+    }
+
+    /// Add a catalog item to the library. Round-trips the engine's own `MetaItemPreview` JSON (found by id
+    /// in whichever catalog field holds it) so the shape is exactly what the engine expects back.
+    func addToLibrary(metaId: String) {
+        guard let raw = rawMetaPreview(forId: metaId) else { return }
+        dispatchCtx(["action": "AddToLibrary", "args": raw])
+    }
+
+    /// Mark a catalog item watched / unwatched without opening its detail page first. `MetaItemMarkAsWatched`
+    /// creates a temporary library item if one doesn't exist, which is exactly this discover use case.
+    func setCatalogWatched(metaId: String, _ isWatched: Bool) {
+        guard let raw = rawMetaPreview(forId: metaId) else { return }
+        dispatchCtx(["action": "MetaItemMarkAsWatched", "args": ["meta_item": raw, "is_watched": isWatched]])
+    }
+
+    /// The raw `MetaItemPreview` JSON for a catalog item id, pulled verbatim from whichever catalog field
+    /// currently holds it (board / discover / search). `MetaItemPreview` deserializes through a legacy
+    /// shape, so we hand the engine back its own serialization rather than reconstruct it.
+    private func rawMetaPreview(forId metaId: String) -> [String: Any]? {
+        for field in ["board", "discover", "search"] {
+            guard let data = stateData(field),
+                  let object = try? JSONSerialization.jsonObject(with: data) else { continue }
+            if let found = Self.findMetaPreview(in: object, id: metaId) { return found }
+        }
+        return nil
+    }
+
+    /// Depth-first search for a meta preview (`{id, type, name, …}`) with the given id inside an engine
+    /// state object: catalog state nests previews under `content` arrays a few levels down.
+    private static func findMetaPreview(in node: Any, id: String) -> [String: Any]? {
+        if let dict = node as? [String: Any] {
+            if dict["id"] as? String == id, dict["type"] is String, dict["name"] is String { return dict }
+            for value in dict.values { if let found = findMetaPreview(in: value, id: id) { return found } }
+        } else if let array = node as? [Any] {
+            for value in array { if let found = findMetaPreview(in: value, id: id) { return found } }
+        }
+        return nil
+    }
+
     // MARK: - Live playback progress (engine Player)
 
     /// Load the engine Player for the picked stream, so it records progress against the right library
