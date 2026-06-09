@@ -44,6 +44,11 @@ struct TVPlayerView: View {
     @State private var loadErrorMsg = ""
     @State private var hasStartedPlaying = false
     @State private var loadTimeout: Task<Void, Never>?
+    @State private var autoRetryCount = 0              // bounded auto-recovery attempts before the error overlay
+    @State private var reconnecting = false            // showing the "Reconnecting…" auto-retry state
+    @State private var autoRetryTask: Task<Void, Never>?
+    private let maxAutoRetries = 2                     // transient source hiccups recover; a dead link still falls through fast
+    private let autoRetryBackoff = 1.2                 // seconds between auto-retries
     // Current episode (changes when switching via Next/Prev/Episodes or auto-advance). Seeded from
     // the passed url/title/meta in onAppear so the first load is unchanged.
     @State private var curURL: URL?
@@ -86,6 +91,7 @@ struct TVPlayerView: View {
                         if let d = data as? Double {
                             if d > 0, !hasStartedPlaying {            // playback actually began
                                 hasStartedPlaying = true; loadTimeout?.cancel(); loadFailed = false
+                                autoRetryCount = 0; reconnecting = false; autoRetryTask?.cancel()   // playback started: clear auto-recovery
                             }
                             currentTime = d
                             if lastSaved < 0 || abs(d - lastSaved) >= 20 {   // persist ~every 20s
@@ -112,7 +118,7 @@ struct TVPlayerView: View {
                         }
                     case MPVProperty.endFileError:
                         loadTimeout?.cancel()
-                        if !hasStartedPlaying { loadErrorMsg = (data as? String) ?? ""; withAnimation { loadFailed = true } }
+                        if !hasStartedPlaying { handleLoadFailure((data as? String) ?? "") }
                     case MPVProperty.endFileEof:
                         if !markedWatched, let m = curMeta { markedWatched = true; core.markPlaybackWatched(m) }
                         autoAdvance()                                // episode finished → play next, else exit
@@ -126,8 +132,14 @@ struct TVPlayerView: View {
             RemoteCatcher(onPress: { handlePress($0) }, onSwipe: { showControls() })
 
             if buffering && !loadFailed {
-                ProgressView().controlSize(.large).tint(Theme.Palette.accent)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: Theme.Space.md) {
+                    ProgressView().controlSize(.large).tint(Theme.Palette.accent)
+                    if reconnecting {
+                        Text("Reconnecting…  (\(autoRetryCount)/\(maxAutoRetries))")
+                            .font(Theme.Typography.label).foregroundStyle(Theme.Palette.textSecondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             if showInfo && !showOptions && !loadFailed { controlBar }
             if showOptions { optionsPanel }
@@ -148,7 +160,7 @@ struct TVPlayerView: View {
             }
         }
         .onDisappear {
-            hideTask?.cancel(); loadTimeout?.cancel()
+            hideTask?.cancel(); loadTimeout?.cancel(); autoRetryTask?.cancel()
             saveProgress(at: currentTime)
             core.reportProgress(timeSeconds: currentTime, durationSeconds: duration)   // flush final position to the engine
             UIApplication.shared.isIdleTimerDisabled = false   // let the screensaver resume once the player closes
@@ -628,7 +640,33 @@ struct TVPlayerView: View {
         }
     }
 
-    private func retryLoad() {
+    /// A pre-playback failure (an endFileError before the first frame). Auto-retry up to `maxAutoRetries`
+    /// times with a short backoff before falling back to the manual error overlay, so a transient source
+    /// hiccup recovers on its own instead of dumping the viewer to an error screen.
+    private func handleLoadFailure(_ msg: String) {
+        guard !hasStartedPlaying, !loadFailed else { return }
+        loadErrorMsg = msg
+        guard autoRetryCount < maxAutoRetries else {
+            reconnecting = false
+            withAnimation { loadFailed = true }
+            return
+        }
+        autoRetryCount += 1
+        buffering = true
+        withAnimation { reconnecting = true }
+        autoRetryTask?.cancel()
+        autoRetryTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(autoRetryBackoff))
+            guard !Task.isCancelled, !hasStartedPlaying else { return }
+            retryLoad(resetAutoRetries: false)
+        }
+    }
+
+    /// Reload the current stream. Manual retries and fresh loads reset the auto-recovery budget; the
+    /// auto-retry path passes `false` so its bounded count keeps counting down toward the overlay.
+    private func retryLoad(resetAutoRetries: Bool = true) {
+        if resetAutoRetries { autoRetryCount = 0; reconnecting = false }
+        autoRetryTask?.cancel()
         withAnimation { loadFailed = false }
         buffering = true; hasStartedPlaying = false; appliedResume = false; appliedAutoTracks = false; loadErrorMsg = ""
         coordinator.player?.loadFile(curURL ?? url)
