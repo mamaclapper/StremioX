@@ -7,30 +7,25 @@ struct HomeView: View {
     @EnvironmentObject private var theme: ThemeManager
     @EnvironmentObject private var account: StremioAccount
     @StateObject private var focusModel = FocusedItemModel()
-    @State private var presentedHero: FocusedHero?
 
     var body: some View {
         NavigationStack {
             ZStack {
                 // The living backdrop: whichever poster is focused fills the screen with its
-                // artwork and details. The details block is focusable: press to open the title,
-                // and it bridges upward focus from the rails to the tab bar.
+                // artwork and details. Pure presentation, never focusable, so pressing up from
+                // the rails lands straight on the tab bar.
                 // detailsBottom = strip height (470) + a breathing gap, so the synopsis can never
                 // run into the rail header regardless of tab-bar safe-area shifts.
-                BrowseHeroBackdrop(model: focusModel, detailsBottom: 494,
-                                   onSelect: { presentedHero = $0 })
+                BrowseHeroBackdrop(model: focusModel, detailsBottom: 520)
                 // The rails live in a bottom strip. The focus engine centers focused rows inside
                 // THIS viewport, so they are geometrically incapable of riding up over the hero.
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: Theme.Space.xl) {
                         if !core.continueWatching.isEmpty {
-                            CoreContinueWatchingRow(items: core.continueWatching, focusModel: focusModel,
-                                                    isTopRow: true)
+                            CoreContinueWatchingRow(items: core.continueWatching, focusModel: focusModel)
                         }
                         ForEach(core.boardRows) { row in
-                            CoreCatalogRowView(row: row, focusModel: focusModel,
-                                               isTopRow: core.continueWatching.isEmpty
-                                                         && row.id == core.boardRows.first?.id)
+                            CoreCatalogRowView(row: row, focusModel: focusModel)
                         }
                         if core.continueWatching.isEmpty && core.boardRows.isEmpty {
                             if account.isSignedIn { LoadingRail() } else { CoreEmptyState.signedOut }
@@ -42,9 +37,6 @@ struct HomeView: View {
                 .mask(stripMask)
                 .frame(height: 470)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            }
-            .navigationDestination(item: $presentedHero) { hero in
-                DetailView(type: hero.type, id: hero.id)
             }
             .overlay(alignment: .topLeading) {
                 header
@@ -114,7 +106,6 @@ struct RailHeader: View {
 struct CoreContinueWatchingRow: View {
     let items: [CoreCWItem]
     var focusModel: FocusedItemModel? = nil
-    var isTopRow: Bool = false   // only the page's top row shows the hero text block
     @EnvironmentObject private var theme: ThemeManager   // observe so the rail's cards repaint on a theme change
 
     var body: some View {
@@ -127,7 +118,7 @@ struct CoreContinueWatchingRow: View {
                                    type: item.type, id: item.id, progress: item.progress,
                                    menu: .continueWatching,
                                    onFocus: focusModel.map { model in
-                                       { model.focus(item.focusedHero, showsDetails: isTopRow) }
+                                       { model.focus(item.focusedHero) }
                                    })
                     }
                 }
@@ -143,7 +134,6 @@ struct CoreContinueWatchingRow: View {
 struct CoreCatalogRowView: View {
     let row: CoreBoardRow
     var focusModel: FocusedItemModel? = nil
-    var isTopRow: Bool = false   // only the page's top row shows the hero text block
     @EnvironmentObject private var theme: ThemeManager
 
     var body: some View {
@@ -155,7 +145,7 @@ struct CoreCatalogRowView: View {
                         PosterCard(title: item.name, poster: item.poster, type: item.type, id: item.id,
                                    menu: .catalog,
                                    onFocus: focusModel.map { model in
-                                       { model.focus(item.focusedHero, showsDetails: isTopRow) }
+                                       { model.focus(item.focusedHero) }
                                    })
                     }
                 }

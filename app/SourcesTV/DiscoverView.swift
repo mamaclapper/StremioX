@@ -13,8 +13,9 @@ struct DiscoverView: View {
         NavigationStack {
             ZStack {
                 // The focused title's artwork + details show through the band between the chips
-                // and the grid; the grid scrolls over them.
-                BrowseHeroBackdrop(model: focusModel, detailsTop: 320)
+                // and the grid; the grid scrolls over them. detailsTop clears the page title plus
+                // three chip rows.
+                BrowseHeroBackdrop(model: focusModel, detailsTop: 430)
                 ScrollView {
                     VStack(alignment: .leading, spacing: Theme.Space.md) {
                         Text("Discover").screenTitleStyle().padding(.horizontal, Theme.Space.screenEdge)
