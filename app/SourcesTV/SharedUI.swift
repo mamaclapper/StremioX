@@ -291,7 +291,7 @@ private struct AddonMetaResponse: Decodable {
 /// Invisible focus probe placed inside a focusable button's label: `isFocused` from the
 /// environment reflects the button's focus (the documented tvOS pattern), and the callback
 /// fires on gain only.
-private struct FocusReporter: View {
+struct FocusReporter: View {
     @Environment(\.isFocused) private var isFocused
     let onFocus: () -> Void
     var body: some View {

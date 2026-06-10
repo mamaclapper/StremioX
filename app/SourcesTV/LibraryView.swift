@@ -37,6 +37,7 @@ struct LibraryView: View {
                 }
                 .heroBottomStrip()
             }
+            .overlay(alignment: .top) { TabBarSummoner() }   // brings the hidden tab bar back on Up
             .background(Theme.Palette.canvas.ignoresSafeArea())
         }
         // Reload while empty: the library syncs from the API asynchronously after sign-in, so the

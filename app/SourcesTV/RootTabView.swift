@@ -107,3 +107,48 @@ struct RootTabView: View {
         retintTabBars(under: controller.presentedViewController, with: appearance)
     }
 }
+
+/// An invisible focus landing strip pinned to the very top of each tab page.
+///
+/// The tvOS tab bar auto-hides when focus dives into content, and UIKit only summons it back when
+/// focus reaches the TOP EDGE of the screen (or on Menu). Our browse layouts keep every focusable
+/// element in a bottom strip, so after popping back from a detail page there was nothing up top to
+/// trigger the summon: Up from the rails did nothing and the bar looked gone until a Menu press.
+/// Landing focus here satisfies the top-edge rule natively, and the explicit focus request hands
+/// the remote straight to the bar so it never feels like focus vanished.
+struct TabBarSummoner: View {
+    var body: some View {
+        Button(action: Self.focusTabBar) {
+            Color.clear
+                .frame(maxWidth: .infinity)
+                .frame(height: 8)
+                .background { FocusReporter(onFocus: Self.focusTabBar) }
+        }
+        .buttonStyle(SummonerStyle())
+    }
+
+    /// Chrome-free: the strip is a pure focus target, never a visible control.
+    private struct SummonerStyle: ButtonStyle {
+        func makeBody(configuration: Configuration) -> some View { configuration.label }
+    }
+
+    static func focusTabBar() {
+        for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+            for window in scene.windows {
+                guard let bar = firstTabBar(under: window.rootViewController) else { continue }
+                bar.setNeedsLayout()
+                UIFocusSystem.focusSystem(for: window)?.requestFocusUpdate(to: bar)
+                return
+            }
+        }
+    }
+
+    private static func firstTabBar(under controller: UIViewController?) -> UITabBar? {
+        guard let controller else { return nil }
+        if let tabs = controller as? UITabBarController { return tabs.tabBar }
+        for child in controller.children {
+            if let bar = firstTabBar(under: child) { return bar }
+        }
+        return firstTabBar(under: controller.presentedViewController)
+    }
+}

@@ -33,6 +33,7 @@ struct SettingsView: View {
                 .padding(.vertical, Theme.Space.xl)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .overlay(alignment: .top) { TabBarSummoner() }   // brings the hidden tab bar back on Up
             .background(Theme.Palette.canvas.ignoresSafeArea())
         }
         .task {
@@ -134,6 +135,16 @@ struct SettingsView: View {
                     .foregroundStyle(Theme.Palette.textSecondary)
             }
             Text(StremioServer.base).font(.system(size: 18, design: .monospaced)).foregroundStyle(Theme.Palette.textTertiary)
+            // When the embedded server is unreachable, explain itself: node's run state and the
+            // server's own last log lines, so a dead server is diagnosable from the couch.
+            if serverOnline == false && !StremioServer.isCustom {
+                Text(NodeServer.statusDescription)
+                    .font(Theme.Typography.label).foregroundStyle(Theme.Palette.textSecondary)
+                ForEach(NodeServer.logTail(), id: \.self) { line in
+                    Text(line).font(.system(size: 16, design: .monospaced))
+                        .foregroundStyle(Theme.Palette.textTertiary).lineLimit(1)
+                }
+            }
             NavigationLink {
                 ServerConfigView { Task { serverOnline = await StremioServer.isOnline() } }
             } label: {

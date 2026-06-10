@@ -35,6 +35,7 @@ struct DiscoverView: View {
                 }
                 .heroBottomStrip()
             }
+            .overlay(alignment: .top) { TabBarSummoner() }   // brings the hidden tab bar back on Up
             .background(Theme.Palette.canvas.ignoresSafeArea())
         }
         .onAppear { if core.discover == nil { core.loadDiscover() }; seed() }

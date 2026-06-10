@@ -7,6 +7,26 @@ import NodeMobile
 /// dedicated thread with a large stack (Node needs one).
 enum NodeServer {
     private(set) static var started = false
+    /// Set when node_start returns: node exited and CANNOT be restarted in-process (a
+    /// nodejs-mobile limitation); only an app relaunch brings the server back.
+    private(set) static var exitCode: Int32?
+
+    /// One-line state for the Settings diagnostics.
+    static var statusDescription: String {
+        if !started { return "Not started (server.js missing from the bundle)" }
+        if let code = exitCode { return "Server exited with code \(code). Relaunch the app to restart it." }
+        return "Server process running"
+    }
+
+    /// The last lines of the server's own log (console output + crashes are teed to a file), so a
+    /// dead or misbehaving server can explain itself right in Settings.
+    static func logTail(_ lines: Int = 4) -> [String] {
+        let caches = NSSearchPathForDirectoriesInDomains(.cachesDirectory, .userDomainMask, true).first
+            ?? NSTemporaryDirectory()
+        let path = (caches as NSString).appendingPathComponent("stremio-server.log")
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return [] }
+        return text.split(separator: "\n").suffix(lines).map(String.init)
+    }
 
     static func startIfNeeded() {
         guard !started else { return }
@@ -80,6 +100,7 @@ enum NodeServer {
         var argv: [UnsafeMutablePointer<CChar>?] =
             [strdup("node"), strdup("-r"), strdup(preloadPath), strdup(scriptPath), nil]
         let rc = node_start(4, &argv)
+        exitCode = rc
         NSLog("StremioX: node server exited rc=\(rc)")
     }
 

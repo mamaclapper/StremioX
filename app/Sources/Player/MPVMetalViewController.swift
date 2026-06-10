@@ -174,18 +174,24 @@ final class MPVMetalViewController: UIViewController {
             "reconnect=1,reconnect_streamed=1,reconnect_delay_max=7"))
 
         // Aggressive read-ahead cache: buffer far past the play head so transient network dips on big
-        // 4K streams don't stall playback (the main cause of on-device stutter). On heavy remuxes
-        // (~100 Mbps) the BYTE cap binds long before the seconds cap, so it is what decides how much
-        // headroom a large file gets: 1 GiB is ~80s of remux and minutes of ordinary 4K. Capped by
-        // RAM, so larger on the Apple TV (4GB) than on iPhone. Back-buffer keeps short rewinds instant.
+        // 4K streams don't stall playback. On heavy remuxes (~100 Mbps) the BYTE cap is what decides
+        // the headroom, so it wants to be huge. The deep cache lives ON FLASH, not in RAM: a 1 GiB
+        // in-memory cache squeezed the whole app under 4K playback on the Apple TV (the embedded
+        // node server's heap starved and died, and UIKit's tab bar machinery wedged), so packets
+        // spill to a temp file in Caches and memory stays lean while the buffer gets even deeper.
         checkError(mpv_set_option_string(mpv, "cache", "yes"))
         checkError(mpv_set_option_string(mpv, "demuxer-readahead-secs", "600"))
+        let streamCache = (NSSearchPathForDirectoriesInDomains(.cachesDirectory, .userDomainMask, true).first
+            ?? NSTemporaryDirectory()) + "/mpv-stream-cache"
+        try? FileManager.default.createDirectory(atPath: streamCache, withIntermediateDirectories: true)
+        checkError(mpv_set_option_string(mpv, "cache-on-disk", "yes"))
+        checkError(mpv_set_option_string(mpv, "cache-dir", streamCache))
 #if os(tvOS)
-        checkError(mpv_set_option_string(mpv, "demuxer-max-bytes", "1GiB"))
-        checkError(mpv_set_option_string(mpv, "demuxer-max-back-bytes", "128MiB"))
+        checkError(mpv_set_option_string(mpv, "demuxer-max-bytes", "2GiB"))
+        checkError(mpv_set_option_string(mpv, "demuxer-max-back-bytes", "256MiB"))
 #else
-        checkError(mpv_set_option_string(mpv, "demuxer-max-bytes", "384MiB"))
-        checkError(mpv_set_option_string(mpv, "demuxer-max-back-bytes", "64MiB"))
+        checkError(mpv_set_option_string(mpv, "demuxer-max-bytes", "768MiB"))
+        checkError(mpv_set_option_string(mpv, "demuxer-max-back-bytes", "128MiB"))
 #endif
 
 //        checkError(mpv_set_option_string(mpv, "target-colorspace-hint", "yes")) // HDR passthrough
