@@ -4,6 +4,10 @@ Where StremioX is headed, in the order we'll build it. No fixed dates; it ships 
 
 The engine and add-on protocol already work, so the focus is everything around them: the best player and interface we can build, first on Apple TV and then across the rest of our devices. The aim is an all-in-one media hub, done one solid piece at a time. Along the way, everything Stremio moved behind its paid tier (profiles with a PIN, skip intro and outro, catalog management, keyword stream filtering, enriched metadata, a download manager, live subtitle sync) ships here free, with our own implementations that depend on nobody's gated backend.
 
+## Have an idea?
+
+Feature requests and bug reports are welcome, and they shape this list. Start a [GitHub Discussion](https://github.com/mamaclapper/StremioX/discussions) to suggest a feature or think one through, or [open an issue](https://github.com/mamaclapper/StremioX/issues) for a bug. Every released change is tracked in [CHANGELOG.md](CHANGELOG.md).
+
 ## The version path
 
 - **0.2.x (shipped).** Skip intro and outro, the cinematic redesign, the living backdrop, ranked Watch Now with the two-level quality picker, instant preloaded auto-play next, and profiles.
@@ -28,6 +32,14 @@ The bigger pieces, each its own chunk of work:
 
 ## Shipped
 
+- **Reliable torrents, at last (0.2.41 to 0.2.44).** Every torrent announces over TCP and TLS trackers as well as the usual ones, so swarms form even where plain UDP peer discovery is blocked, and the player's read-ahead is now sized to the source, so a torrent no longer grows in memory until the streaming server is killed. Debrid and direct links play straight through.
+- **Automatic performance mode (0.2.44).** The app detects a memory-constrained Apple TV (the Apple TV HD) and takes a lighter path on its own, so the remote stays responsive while a weak CPU is busy; every Apple TV 4K stays full. Overridable in Settings.
+- **Smarter Watch Now and smooth scrubbing (0.2.43).** Ranking now weighs file size and lossless audio, so it plays the genuinely best release instead of the first one that loaded, and holding to seek glides at an even, predictable pace.
+- **Sound that reaches your soundbar (0.2.43).** The player claims a movie-playback audio session, fixing setups that had no sound over HDMI eARC and letting decoded multichannel audio reach a receiver.
+- **Add to Library, QR hand-off, HDR toggle (0.2.41).** Save any title from its page or Continue Watching, show the playing stream as a QR code to keep watching on your phone, and tone-map Dolby Vision to SDR on displays that mishandle it.
+- **Two builds and Direct Links Only (0.2.35 to 0.2.44).** A Full build with the embedded server, and a lighter Lite build for debrid and direct links only, plus a Direct Links Only switch in the Full build.
+- **Seamless binge and per-series quality memory (0.2.25 to 0.2.35).** The next episode is fetched, ranked, and warmed up before the credits and locked to the same release group, and Watch Now reopens a series in the quality you last played it.
+- **The embedded streaming server and Play a link (0.2.x).** Torrents stream through a bundled server on the Apple TV, and you can paste any magnet, direct URL, or resolved debrid or usenet link to play it.
 - **Profiles (0.2.6).** A "Who's watching?" picker at launch, per-profile themes and avatars, an optional 4-digit PIN, and the choice of sharing the main Stremio account or signing into a separate one per profile. Switching keeps every session valid.
 - **Playback flow fixes (0.2.5).** Leaving the player returns to the exact page playback started from. Auto-play next ranks every add-on's sources instead of taking the first answer, and preloads the next episode in the background at the halfway mark so it starts instantly. Real-Debrid sources rank last. The Watch button waits (with a live counter) until your add-ons finish answering.
 - **The living backdrop (0.2.2 to 0.2.4).** Home, Discover, and Library put the focused title's full artwork and details behind everything, on every row and grid, with content tucking underneath as you browse.
@@ -44,6 +56,6 @@ The bigger pieces, each its own chunk of work:
 - **The basics.** Sign-in, smooth 4K with TrueHD and Atmos and HDR that actually play, posters that load, solid caching, and a player you can always back out of.
 - **iPhone and iPad, for now.** A web UI with a native libmpv player and external-player handoff, until the native client replaces it (0.3.0, in progress).
 
-## Distribution
+## Distribution and onboarding
 
-A self-hosted update channel is coming early, so the app can update itself rather than expire like an ordinary sideload. First-run setup for add-ons and debrid rides along with it.
+A self-hosted update channel is coming early, so the app can update itself rather than expire like an ordinary sideload. A friendly first-run setup rides along with it: sign in, and a one-step import pulls in your existing add-ons (and, once in-app debrid lands, your debrid keys), so switching over costs you nothing.

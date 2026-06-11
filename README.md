@@ -234,7 +234,9 @@ It started out talking to add-ons by hand, and that kept getting small things wr
 
 ## What's next
 
-The plan for upcoming work (the native iPhone and iPad client on the engine, offline downloads, our own streaming server with Usenet and live TV, richer per-profile add-on sets, and more) is in [ROADMAP.md](ROADMAP.md).
+The plan for upcoming work (the native iPhone and iPad client on the engine, offline downloads, our own streaming server with Usenet and live TV, richer per-profile add-on sets, and more) is in [ROADMAP.md](ROADMAP.md). Every released change is tracked in [CHANGELOG.md](CHANGELOG.md).
+
+Have a feature in mind, or hit a bug? Start a [GitHub Discussion](https://github.com/mamaclapper/StremioX/discussions) to suggest or talk through an idea, or [open an issue](https://github.com/mamaclapper/StremioX/issues). Requests genuinely shape the roadmap.
 
 ## Known issues
 
