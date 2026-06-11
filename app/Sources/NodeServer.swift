@@ -53,6 +53,16 @@ enum NodeServer {
         setenv("HOME", caches, 1)
         setenv("APP_PATH", serverData, 1)
         setenv("NO_CORS", "1", 1)
+        // CRITICAL: disable casting/SSDP. The server's Chromecast/DLNA discovery is
+        // UDP multicast, which does not work in the embedded runtime on tvOS, so it
+        // errors in an unthrottled loop ("SSDP error: [object Object]") that saturates
+        // the node event loop and pegs the CPU. On a device left running a while this
+        // reached ~3 million errors, which starved torrent peer discovery (0 peers)
+        // and made the whole app's remote sluggish (only system play/pause survived).
+        // server.js gates the entire casting subsystem behind this flag, which the
+        // official mobile builds set via IOS_APP / TV_ENV; we never did, and that was
+        // the bug behind "torrents stopped loading" and "the remote freezes in torrents".
+        setenv("CASTING_DISABLED", "1", 1)
         FileManager.default.changeCurrentDirectoryPath(caches)
 
         // node's stdout/stderr aren't surfaced by nodejs-mobile, so tee console + uncaught
