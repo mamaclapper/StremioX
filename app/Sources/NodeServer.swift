@@ -67,6 +67,24 @@ enum NodeServer {
         process.on('unhandledRejection',function(e){w('[rej]',[e&&e.stack||e])});
         w('[boot]',['preload active']);
 
+        // Boot probe: is UDP (dgram) functional in this node build? BitTorrent peer
+        // discovery is UDP-first (DHT, udp trackers); a broken dgram on the device
+        // slice would explain torrents finding zero peers while HTTP works fine.
+        (function(){
+          try {
+            var dgram = require('dgram');
+            var s = dgram.createSocket('udp4');
+            var ping = Buffer.from('d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe');
+            var done = false;
+            s.on('message', function(m, r){ done = true; w('[probe]', ['UDP OK: DHT pong from ' + r.address + ', ' + m.length + ' bytes']); try{s.close()}catch(_){ } });
+            s.on('error', function(e){ w('[probe]', ['UDP socket error: ' + e]); });
+            s.send(ping, 0, ping.length, 6881, 'router.bittorrent.com', function(e){
+              if (e) w('[probe]', ['UDP send error: ' + e]); else w('[probe]', ['UDP DHT ping sent']);
+            });
+            setTimeout(function(){ if (!done) w('[probe]', ['UDP probe: no pong in 10s (UDP likely broken or blocked)']); try{s.close()}catch(_){ } }, 10000);
+          } catch (e) { w('[probe]', ['UDP unavailable: ' + e]); }
+        })();
+
         // Wake watchdog. Long tvOS suspension (overnight sleep) tears the listener
         // sockets down; node survives (exceptions are trapped above) but the HTTP
         // server never re-binds, so the app wakes to a dead server and only a

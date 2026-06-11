@@ -852,6 +852,7 @@ struct TVPlayerView: View {
             var warm = false
             while Date() < deadline, !Task.isCancelled, !hasStartedPlaying {
                 if let stats = await Self.torrentStats(hash: hash) {
+                    DiagnosticsLog.log("torrent", "stats \(hash.prefix(8)): peers=\(stats.peers ?? -1) conn=\(stats.swarmConnections ?? -1) tries=\(stats.connectionTries ?? -1) searching=\(String(describing: stats.peerSearchRunning)) down=\(Int(stats.downloaded ?? -1)) speed=\(Int(stats.downloadSpeed ?? -1))")
                     let peers = stats.swarmConnections ?? stats.peers ?? 0
                     let speed = stats.downloadSpeed ?? 0
                     var line = "Connecting to peers · \(peers) connected"
@@ -878,6 +879,8 @@ struct TVPlayerView: View {
     private struct TorrentStats: Decodable {
         let peers: Int?
         let swarmConnections: Int?
+        let connectionTries: Int?
+        let peerSearchRunning: Bool?
         let downloaded: Double?
         let downloadSpeed: Double?
     }
@@ -1163,6 +1166,15 @@ struct TVPlayerView: View {
               let url = URL(string: "\(StremioServer.base)/\(hash)/create") else { return }
         var sources = stream.sources ?? []
         sources.append("dht:\(hash)")
+        // Add-ons hand out mostly udp:// trackers, and DHT is UDP too. If UDP is
+        // unavailable in the embedded node (suspected on device), HTTP trackers
+        // are the swarm's only way to form, so always offer a few public ones.
+        sources.append(contentsOf: [
+            "tracker:http://tracker.files.fm:6969/announce",
+            "tracker:http://tracker.bt4g.com:2095/announce",
+            "tracker:http://tracker.renfei.net:8080/announce",
+            "tracker:https://tracker.tamersunion.org:443/announce",
+        ])
         let body: [String: Any] = ["torrent": ["infoHash": hash],
                                    "peerSearch": ["sources": sources, "min": 40, "max": 150]]
         guard let data = try? JSONSerialization.data(withJSONObject: body) else { return }
