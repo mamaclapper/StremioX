@@ -155,8 +155,7 @@ struct CoreContinueWatchingRow: View {
                                    name: entry.name, poster: entry.poster,
                                    season: entry.season, episode: entry.episode),
                 episodes: [], sourceHint: entry.qualityText, torrent: entry.torrent ?? false,
-                headers: entry.headers,
-                trickplayManifestURL: entry.trickplayManifestURL.flatMap(URL.init(string:)))
+                headers: entry.headers)
         }
     }
 }

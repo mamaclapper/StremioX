@@ -20,9 +20,6 @@ struct PlaybackRequest: Identifiable {
     var bingeGroup: String? = nil
     /// HTTP request headers the stream's add-on requires (behaviorHints.proxyHeaders).
     var headers: [String: String]? = nil
-    /// WebVTT trickplay manifest used for scrub previews. Cues may point to individual
-    /// images or sprite-sheet rectangles via #xywh.
-    var trickplayManifestURL: URL? = nil
 }
 
 /// Holds the active playback request. Set it to present the player; clear it to dismiss.
@@ -64,7 +61,7 @@ struct RootView: View {
             if let req = presenter.request {
                 TVPlayerView(url: req.url, title: req.title, meta: req.meta, episodes: req.episodes,
                              sourceHint: req.sourceHint, torrent: req.torrent, bingeGroup: req.bingeGroup,
-                         headers: req.headers, trickplayManifestURL: req.trickplayManifestURL,
+                             headers: req.headers,
                              onClose: { presenter.request = nil })
                     .id(req.id)   // clean player teardown per request
             }

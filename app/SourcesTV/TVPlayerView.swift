@@ -15,7 +15,6 @@ struct TVPlayerView: View {
     var torrent: Bool = false                  // stream rides the embedded torrent engine (gets warm-up patience)
     var bingeGroup: String? = nil              // the launching stream's release-group tag, for sticky auto-next
     var headers: [String: String]? = nil       // HTTP headers the stream's add-on requires (proxyHeaders)
-    var trickplayManifestURL: URL? = nil       // WebVTT trickplay manifest for scrub previews
     var onClose: () -> Void = {}           // dismiss the dedicated player window
 
     @EnvironmentObject private var account: StremioAccount
@@ -139,13 +138,6 @@ struct TVPlayerView: View {
 
     private var controlsHidden: Bool { !showInfo && !showOptions && !loadFailed }
 
-    private func resolvedTrickplayManifestURL(streamManifestURL: URL?, meta: PlaybackMeta?) -> URL? {
-        let generated = TrickplayManifestURLBuilder.makeURL(for: meta)
-        let resolved = streamManifestURL ?? generated
-        plog.debug("trickplay resolve stream=\(streamManifestURL?.absoluteString ?? "nil", privacy: .public) generated=\(generated?.absoluteString ?? "nil", privacy: .public) resolved=\(resolved?.absoluteString ?? "nil", privacy: .public) libraryId=\(meta?.libraryId ?? "nil", privacy: .public) videoId=\(meta?.videoId ?? "nil", privacy: .public)")
-        return resolved
-    }
-
     var body: some View {
         ZStack(alignment: .bottom) {
             Color.black.ignoresSafeArea()
@@ -174,8 +166,7 @@ struct TVPlayerView: View {
                                         videoId: m.videoId, url: u.absoluteString, title: curTitle,
                                         season: m.season, episode: m.episode, name: m.name,
                                         poster: m.poster, type: m.type, qualityText: curHint,
-                                        torrent: curIsTorrent, savedAt: Date(), headers: curHeaders,
-                                        trickplayManifestURL: curTrickplayManifestURL?.absoluteString),
+                                        torrent: curIsTorrent, savedAt: Date(), headers: curHeaders),
                                         profileID: ProfileStore.shared.activeID)
                                 }
                             }
@@ -253,8 +244,7 @@ struct TVPlayerView: View {
             if curURL == nil {   // seed from initial request
                 curURL = url; curTitle = title; curMeta = meta
                 curIsTorrent = torrent; curHeaders = headers
-                curTrickplayManifestURL = resolvedTrickplayManifestURL(streamManifestURL: trickplayManifestURL,
-                                                                        meta: curMeta)
+                curTrickplayManifestURL = TrickplayManifestURLBuilder.makeURL(for: curMeta)
                 curIsLive = initialLiveMode
             }
             scrubThumbnails.configure(trickplayManifestURL: curTrickplayManifestURL, headers: curHeaders)
@@ -944,8 +934,7 @@ struct TVPlayerView: View {
         curIsLive = isLiveMeta(curMeta) && !stream.isTorrent
         curBinge = stream.behaviorHints?.bingeGroup
         curHeaders = stream.requestHeaders
-        curTrickplayManifestURL = resolvedTrickplayManifestURL(streamManifestURL: stream.trickplayManifestURL,
-                                    meta: curMeta)
+        curTrickplayManifestURL = TrickplayManifestURLBuilder.makeURL(for: curMeta)
         scrubThumbnails.configure(trickplayManifestURL: curTrickplayManifestURL, headers: curHeaders)
         sourceHops = 0; exhaustedURLs = []   // a deliberate pick resets the failover budget (failover restores it)
         recoveryDeadline?.cancel(); recoveryDeadline = nil   // fresh attempt re-arms the overall recovery cap
@@ -1585,8 +1574,7 @@ struct TVPlayerView: View {
             curBinge = pre.bingeGroup
             curIsTorrent = pre.stream.isTorrent
             curHeaders = pre.stream.requestHeaders
-            curTrickplayManifestURL = resolvedTrickplayManifestURL(streamManifestURL: pre.stream.trickplayManifestURL,
-                                                                    meta: newMeta)
+            curTrickplayManifestURL = TrickplayManifestURLBuilder.makeURL(for: newMeta)
             scrubThumbnails.configure(trickplayManifestURL: curTrickplayManifestURL, headers: curHeaders)
             curIsLive = isLiveMeta(newMeta) && !pre.stream.isTorrent
             torrentWarmupsUsed = 0; torrentStatus = nil
@@ -1644,8 +1632,7 @@ struct TVPlayerView: View {
                     // manual-nav case: episodes panel, Prev, an early Next) this leaves the live engine
                     // untouched instead of cold-recreating it. Mirrors switchStream's different-hash guard.
                     if let oldHash = leavingHash, oldHash != s.infoHash?.lowercased() { closeTorrent(hash: oldHash) }
-                    curTrickplayManifestURL = resolvedTrickplayManifestURL(streamManifestURL: s.trickplayManifestURL,
-                                                                            meta: newMeta)
+                    curTrickplayManifestURL = TrickplayManifestURLBuilder.makeURL(for: newMeta)
                     scrubThumbnails.configure(trickplayManifestURL: curTrickplayManifestURL, headers: curHeaders)
                     core.loadEnginePlayer(for: s)
                     prepareTorrent(s)                                  // no-op for direct / debrid URLs

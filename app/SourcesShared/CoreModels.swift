@@ -394,7 +394,6 @@ struct CoreStream: Decodable, Identifiable {
         return headers
     }
 
-    var trickplayManifestURL: URL? { behaviorHints?.trickplayManifestURL }
 }
 
 struct CoreStreamBehaviorHints: Decodable {
@@ -402,12 +401,6 @@ struct CoreStreamBehaviorHints: Decodable {
     let bingeGroup: String?
     let filename: String?
     let proxyHeaders: CoreProxyHeaders?
-    let trickplayManifest: String?
-
-    var trickplayManifestURL: URL? {
-        guard let trickplayManifest, !trickplayManifest.isEmpty else { return nil }
-        return URL(string: trickplayManifest)
-    }
 }
 
 /// `behaviorHints.proxyHeaders`: per-stream HTTP headers, `request` applied on the way out.
