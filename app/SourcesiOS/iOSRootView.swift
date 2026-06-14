@@ -301,6 +301,9 @@ struct iOSLibraryView: View {
                         }
                     }
                     .padding(.bottom, Theme.Space.md)
+                    // Pin the column to the viewport width (same fix as Discover): the adaptive PosterGrid
+                    // can report an over-wide ideal that the LazyVStack adopts, shifting the column left.
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     ContentUnavailableViewCompat(title: "Library", systemImage: "books.vertical",
                         message: "Titles you add to your library in Stremio show up here.")
@@ -564,6 +567,11 @@ struct iOSDiscoverView: View {
                 }
                 .padding(.top, core.discover != nil ? 0 : Theme.Space.md)
                 .padding(.bottom, Theme.Space.md)
+                // Pin the column to the viewport width. The adaptive PosterGrid can report an over-wide
+                // ideal that the LazyVStack adopts (LazyVStack is NOT inherently viewport-pinned as the
+                // note above assumed), shifting the hero/chips/grid off the left edge — the Discover
+                // clipping report. Home has only self-bounding horizontal rails, so it never needed this.
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollDismissesHeroRotation(model: hero)
             .background(Theme.Palette.canvas.ignoresSafeArea())
