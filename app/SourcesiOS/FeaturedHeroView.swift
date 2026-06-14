@@ -60,24 +60,30 @@ struct FeaturedHeroView: View {
     // MARK: Backdrop (full-bleed still art + dual scrim, lifted from iOSDetailView.backdrop)
 
     private var backdrop: some View {
-        ZStack {
-            // Poster fallback layer: a slow or failed backdrop request must never leave a flat black
-            // band (the iPhone "no backdrop" report — AsyncImage fell straight to the black canvas on
-            // a load miss while the iPad had it cached). The poster is the catalog art the screen
-            // already loaded, so it's almost always available; the backdrop paints over it on success.
-            posterFallback
-            AsyncImage(url: URL(string: model.hero?.backdrop ?? "")) { phase in
-                switch phase {
-                case .success(let img): img.resizable().aspectRatio(contentMode: .fill)
-                default: Color.clear   // transparent while loading / on failure so the poster shows through
+        // GeometryReader pins BOTH art layers to the EXACT band size so `scaledToFill` always covers the
+        // whole band at any window width. Without it, the AsyncImage sat unframed inside the ZStack (the
+        // frame was on the ZStack, not the image), so it sized to the loaded image's natural width and the
+        // rest of the wide macOS band stayed bare scrim — the "backdrop only fills part of the band" report.
+        // (On the narrow iPhone the image width happened to exceed the band, so the gap never showed.)
+        GeometryReader { geo in
+            ZStack {
+                // Poster fallback layer: a slow or failed backdrop request must never leave a flat black
+                // band (the iPhone "no backdrop" report — AsyncImage fell straight to the black canvas on
+                // a load miss while the iPad had it cached). The poster is the catalog art the screen
+                // already loaded, so it's almost always available; the backdrop paints over it on success.
+                posterFallback
+                AsyncImage(url: URL(string: model.hero?.backdrop ?? "")) { phase in
+                    switch phase {
+                    case .success(let img): img.resizable().aspectRatio(contentMode: .fill)
+                    default: Color.clear   // transparent while loading / on failure so the poster shows through
+                    }
                 }
             }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .clipped()
         }
         .frame(height: heroHeight)
-        // Leading-anchored full width so the band's leading edge is the screen's (mirrors the proven
-        // iOSDetailView hero width-anchor) and a wide child can't shift the ZStack to negative x.
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .clipped()
+        .frame(maxWidth: .infinity)
         // Cross-fade the artwork itself on id change so a new featured title dissolves in.
         .id(model.hero?.id)
         .transition(reduceMotion ? .identity : .opacity)
