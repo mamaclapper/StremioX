@@ -102,6 +102,11 @@ struct PlayerScreen: View {
     @State private var appliedAutoTracks = false
     @State private var controlsVisible = true
     @State private var scrubbing = false
+    #if os(macOS)
+    /// Display-sleep assertion held while the player is open (macOS parity with the iOS idle-timer
+    /// disable): keeps the Mac from dimming / sleeping mid-movie. Ended on disappear.
+    @State private var macSleepActivity: NSObjectProtocol?
+    #endif
     @State private var panel: Panel?
     @State private var panelRows: [Row] = []   // cached so a 4×/s clock tick doesn't re-rank a thousand sources
     @State private var forcedLandscape = false
@@ -225,6 +230,11 @@ struct PlayerScreen: View {
             scheduleHide(); startLoadTimeout()
             #if os(iOS)
             UIApplication.shared.isIdleTimerDisabled = true   // hold the screen awake while the player is open (parity with tvOS)
+            #elseif os(macOS)
+            // macOS has no idle-timer API; hold a display-sleep assertion so the Mac doesn't dim/sleep
+            // mid-movie (the iOS/tvOS keep-awake parity that was missing on Mac).
+            macSleepActivity = ProcessInfo.processInfo.beginActivity(options: .idleDisplaySleepDisabled,
+                                                                     reason: "StremioX video playback")
             #endif
         }
         .onDisappear {
@@ -232,6 +242,8 @@ struct PlayerScreen: View {
             stallWatchdog?.cancel(); recoveryDeadline?.cancel(); skipFetchTask?.cancel()
             #if os(iOS)
             UIApplication.shared.isIdleTimerDisabled = false  // let the screensaver / auto-lock resume once the player closes
+            #elseif os(macOS)
+            if let token = macSleepActivity { ProcessInfo.processInfo.endActivity(token); macSleepActivity = nil }
             #endif
         }
         .confirmationDialog("Play in another app", isPresented: $showExternalChooser,
@@ -747,6 +759,16 @@ struct PlayerScreen: View {
                 scheduleHide()
             }
             #endif
+            if !isLive {
+                // Restart from 0:00 (tvOS parity #5): seek to the start and keep playing.
+                iconButton("arrow.counterclockwise") {
+                    coordinator.player?.seek(to: 0)
+                    currentTime = 0
+                    if duration > 0 { onSeek(0, duration); lastReported = 0 }
+                    if isPaused { coordinator.player?.togglePause() }   // restart implies resume
+                    scheduleHide()
+                }
+            }
             iconButton("info.circle") { openPanel(.info) }
             iconButton("arrow.up.forward.app") {       // hand off to Infuse / VLC / Share
                 hideTask?.cancel()
