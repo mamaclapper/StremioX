@@ -4,6 +4,23 @@ All notable changes to StremioX, newest first. StremioX is Apple TV first, with 
 
 What is planned next is in [ROADMAP.md](ROADMAP.md). To request a feature or report a bug, start a [GitHub Discussion](https://github.com/mamaclapper/StremioX/discussions) or [open an issue](https://github.com/mamaclapper/StremioX/issues).
 
+## 0.3.1 (prerelease) - 2026-06-14
+
+A bug-fix and polish pass on top of 0.3.0, driven by on-device testing. Cut as a prerelease to verify the streaming-server and movie fixes on real devices before promoting it to the latest release.
+
+### Fixed
+- **Movies now find all your add-ons, not just the 2-3 fastest.** Movie pages under-queried add-ons (Apple TV used the engine's stream guess; iPhone/iPad/Mac skipped the stream load when the title's meta was already loaded without its streams). Series were unaffected. The source-resolution timeout is also longer (20s) for slow add-ons.
+- **The streaming server should hold up better on iPhone.** The embedded server runs inside the app, so it shares the app's memory budget, and 4K playback could push it past the iOS limit and kill the server. Two changes cut peak memory: the per-app memory ceiling is raised via a system entitlement, and a debrid or direct stream now uses a 256 MB read-ahead instead of 512 MB on iPhone, iPad, and Apple TV. If the server does stop, Settings now offers a one-tap relaunch.
+- **Continue Watching resume gets the in-player episode controls.** Resuming a series from Continue Watching now offers Next, Previous, and the episode list, the same as playing from the detail page.
+- **Source rows no longer show the resolution twice** when an add-on is named after a quality (for example an add-on literally called "1080p").
+
+### Added
+- **Audio Passthrough mode** (Settings, Audio Output): bitstream Dolby and DTS to an AV receiver that decodes them. (The existing Surround mode already decodes Dolby/DTS to multichannel PCM, the fix for a soundbar that drops DTS to stereo.)
+- **Sticky release group across episodes** (quality no longer jumps mid-season), an **immersive frosted top bar** with the hero artwork behind it, and a **readable centered content column** on wide iPad and Mac windows.
+
+### Notes
+- Coming next, with on-device verification: HDR rendering correctly after an in-place episode switch (a fresh replay is the current workaround), and Mac arrow-key navigation plus the immersive bar on Mac.
+
 ## 0.3.0 - 2026-06-14
 
 StremioX is now a native app on iPhone, iPad, and Mac alongside Apple TV, all on the same stremio-core engine and libmpv player. This milestone retires the old iPhone and iPad web host. The beta entries below list the iPhone polish that led here; the headline additions and fixes are collected here.
