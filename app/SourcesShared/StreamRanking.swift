@@ -559,17 +559,32 @@ enum StreamRanking {
     static func flavorTags(_ s: CoreStream) -> [String] {
         let t = qualityText(s)
         var tags: [String] = []
+        // Source / encode
         if t.contains("remux") { tags.append("Remux") }
         else if t.contains("bluray") || t.contains("blu-ray") { tags.append("BluRay") }
         else if t.contains("web") { tags.append("WEB") }
+        // HDR formats are layered (Dolby Vision often sits over an HDR10 base), so they're additive
+        // rather than exclusive — mirrors Stremio's "HDR10 | DV | HDR" line.
         if t.contains("dolby vision") || t.contains("dolbyvision") || t.contains("dovi")
             || matches(t, #"\bdv\b"#) { tags.append("DV") }
+        if t.contains("hdr10+") || t.contains("hdr10plus") { tags.append("HDR10+") }
+        else if t.contains("hdr10") { tags.append("HDR10") }
         else if t.contains("hdr") { tags.append("HDR") }
+        // Audio format (one, best-first)
         if t.contains("atmos") { tags.append("Atmos") }
-        else if t.contains("dts-hd") || t.contains("dts hd") { tags.append("DTS-HD") }
+        else if t.contains("truehd") || t.contains("true-hd") { tags.append("TrueHD") }
+        else if t.contains("dts-hd") || t.contains("dts hd") || t.contains("dtshd") { tags.append("DTS-HD") }
         else if t.contains("dts") { tags.append("DTS") }
+        else if t.contains("eac3") || t.contains("e-ac3") || t.contains("ddp") || t.contains("dd+") { tags.append("DD+") }
+        else if t.contains("ac3") || matches(t, #"\bdd\b"#) { tags.append("DD") }
+        else if t.contains("aac") { tags.append("AAC") }
+        // Channel layout
+        if t.contains("7.1") { tags.append("7.1") }
+        else if t.contains("5.1") { tags.append("5.1") }
+        // Video codec
         if t.contains("hevc") || t.contains("x265") || t.contains("h265") || t.contains("h.265") { tags.append("HEVC") }
         else if t.contains("av1") { tags.append("AV1") }
+        else if t.contains("x264") || t.contains("h264") || t.contains("h.264") { tags.append("H.264") }
         if isCached(s, t) { tags.append("Cached") }
         if let junk = junkClass(t) { tags.append(junk) }   // why this source sits at the bottom
         return tags
