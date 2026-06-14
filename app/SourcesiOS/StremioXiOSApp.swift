@@ -38,21 +38,6 @@ struct StremioXiOSApp: App {
     var body: some Scene {
         WindowGroup {
             iOSRootView()
-                .environmentObject(account)
-                .environmentObject(core)
-                .environmentObject(ThemeManager.shared)
-                .environmentObject(ProfileStore.shared)
-                .preferredColorScheme(.dark)
-                // Tint the whole scene so system chrome inside separately-presented sheets (SignIn /
-                // OpenLink) and the ProfileEditor cover renders the app accent, not system blue —
-                // those presentations are their own host and don't inherit a tint set deeper in.
-                .tint(Theme.Palette.accent)
-                // Without a min frame the macOS WindowGroup adopts the root's tiny intrinsic size and
-                // opens as a postage-stamp window; pin a sensible minimum so it can't collapse. (iOS /
-                // iPadOS ignore this — their windows are managed by the system, not content size.)
-                #if os(macOS)
-                .frame(minWidth: 900, minHeight: 600)
-                #endif
                 .onChange(of: scenePhase) { phase in   // iOS 16 single-parameter form
                     if phase == .active { UpdateChecker.shared.checkIfStale() }
                 }
@@ -61,6 +46,31 @@ struct StremioXiOSApp: App {
                         ProfileStore.shared.bootstrapSync()
                     }
                 }
+                // macOS: present the player full-window at the scene ROOT (above the dimmed app), not as a
+                // separate floating window. The overlay is applied HERE — INSIDE the environmentObjects
+                // below — so those objects wrap the overlay's ZStack and the hoisted player (a sibling of
+                // the root content, fed through MacPlayerHost) inherits CoreBridge / StremioAccount /
+                // ThemeManager. Injecting them deeper than the overlay crashed the player the instant it
+                // launched: the hoisted AnyView read an @EnvironmentObject that was not one of its
+                // ancestors, so SwiftUI hit EnvironmentObject.error() (a fatal assertion, SIGTRAP). See
+                // MacRootPlayerOverlay / MacPlayerHost in PlatformModifiers.
+                #if os(macOS)
+                .modifier(MacRootPlayerOverlay())
+                #endif
+                .environmentObject(account)
+                .environmentObject(core)
+                .environmentObject(ThemeManager.shared)
+                .environmentObject(ProfileStore.shared)
+                .preferredColorScheme(.dark)
+                // Tint the whole scene so system chrome inside separately-presented sheets (SignIn /
+                // OpenLink) and the ProfileEditor cover renders the app accent, not system blue.
+                .tint(Theme.Palette.accent)
+                // Without a min frame the macOS WindowGroup adopts the root's tiny intrinsic size and
+                // opens as a postage-stamp window; pin a sensible minimum so it can't collapse. (iOS /
+                // iPadOS ignore this — their windows are managed by the system, not content size.)
+                #if os(macOS)
+                .frame(minWidth: 900, minHeight: 600)
+                #endif
         }
         // macOS opens the window at a real default size (the deployment target is macOS 14, so
         // .defaultSize / .windowResizability — macOS 13+ — are available), and .contentMinSize lets

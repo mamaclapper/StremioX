@@ -404,12 +404,15 @@ struct iOSSearchView: View {
     /// True only when this is the visible tab — gates the macOS window-titlebar wordmark (#46).
     var isActive: Bool = true
     @EnvironmentObject private var core: CoreBridge
+    @EnvironmentObject private var account: StremioAccount   // passed to the lifted paste-a-link player
     @EnvironmentObject private var theme: ThemeManager   // observe textScale so Theme.Typography repaints live
     @State private var query = ""
     @State private var searchTask: Task<Void, Never>?
     @State private var searchDebouncePending = false
     @State private var path: [FeaturedHeroItem] = []
     @State private var showOpenLink = false
+    @State private var pastedPlayer: iOSPlayerLaunch?   // paste-a-link player, presented from here (not the sheet)
+    @State private var pendingLaunch: iOSPlayerLaunch?  // staged while the link sheet dismisses, presented in onDismiss
     @AppStorage(PlaybackSettings.Key.directLinksOnly) private var directLinksOnly = false
 
     var body: some View {
@@ -449,7 +452,23 @@ struct iOSSearchView: View {
             .onAppear { core.loadSearchSuggestions() }
             .onChange(of: query) { value in scheduleSearch(value) }   // iOS 16 single-param onChange
             .onDisappear { searchTask?.cancel() }
-            .sheet(isPresented: $showOpenLink) { iOSOpenLinkView() }
+            .sheet(isPresented: $showOpenLink, onDismiss: {
+                // Present the player only AFTER the link sheet has fully dismissed. On macOS a still-open
+                // sheet draws over the window-root player; on iOS presenting mid-dismiss silently drops the
+                // cover. Driving it from onDismiss (not a timed delay) is race-free across devices/OS.
+                if let launch = pendingLaunch {
+                    pendingLaunch = nil
+                    pastedPlayer = launch
+                }
+            }) {
+                iOSOpenLinkView { launch in
+                    pendingLaunch = launch
+                    showOpenLink = false   // triggers onDismiss above, which presents the player
+                }
+            }
+            // Present the paste-a-link player HERE (the Search tab is not a sheet) so the macOS root player
+            // fills the window cleanly. On iOS this is a fullScreenCover; on macOS it hoists to MacPlayerHost.
+            .iOSPlayerCover($pastedPlayer, account: account)
         }
     }
 
@@ -755,12 +774,16 @@ private func iOSDirectResume(for item: RailItem, core: CoreBridge,
 /// its own small parse/resolve built on the shared `TorrentTrackers` + `StremioServer`, and launches
 /// the same native `PlayerScreen` the rest of the iOS app uses.
 private struct iOSOpenLinkView: View {
-    @EnvironmentObject private var account: StremioAccount
+    /// Hand the ready-to-play launch to the PARENT (the Search tab), which dismisses this sheet and then
+    /// presents the player. On macOS the player is hoisted to the window root (MacPlayerHost); presenting
+    /// it from inside this still-open sheet drew the sheet ON TOP of the video. Launching from the parent
+    /// (not a sheet) lets the root player fill the window with nothing above it.
+    let onPlay: (iOSPlayerLaunch) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var input = ""
     @State private var working = false
     @State private var status: String?
-    @State private var player: iOSPlayerLaunch?
+    @State private var resolveTask: Task<Void, Never>?   // in-flight magnet resolution; cancelled if the sheet closes
     @AppStorage(PlaybackSettings.Key.directLinksOnly) private var directLinksOnly = false
 
     var body: some View {
@@ -781,7 +804,7 @@ private struct iOSOpenLinkView: View {
                 Button(working ? "Working…" : "Play") { play() }
                     .buttonStyle(PrimaryActionStyle())
                     .disabled(working || input.trimmingCharacters(in: .whitespaces).isEmpty)
-                Button("Cancel") { dismiss() }
+                Button("Cancel") { resolveTask?.cancel(); dismiss() }
                     .buttonStyle(ChipButtonStyle(selected: false))
             }
             if let status {
@@ -794,8 +817,9 @@ private struct iOSOpenLinkView: View {
         .padding(Theme.Space.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.Palette.canvas.ignoresSafeArea())
-        // The picked stream plays full-screen over the sheet.
-        .iOSPlayerCover($player, account: account)
+        // Closing the sheet mid-resolve must stop the magnet fetch — otherwise it would fire onPlay and
+        // present the player after the user already backed out.
+        .onDisappear { resolveTask?.cancel() }
     }
 
     private func play() {
@@ -822,19 +846,22 @@ private struct iOSOpenLinkView: View {
             return
         }
         let title = url.lastPathComponent.isEmpty ? (url.host ?? "Stream") : url.lastPathComponent
-        player = iOSPlayerLaunch(url: url, title: title)
+        onPlay(iOSPlayerLaunch(url: url, title: title))
     }
 
     private func playMagnet(_ magnet: OpenLinkMagnet.Magnet) {
         working = true
         status = "Fetching torrent info… this can take up to a minute"
-        Task { @MainActor in
+        resolveTask = Task { @MainActor in
             defer { working = false }
             guard let pick = await OpenLinkMagnet.resolve(magnet) else {
-                status = "Could not fetch the torrent. No reachable peers, or a dead magnet."
+                if !Task.isCancelled {
+                    status = "Could not fetch the torrent. No reachable peers, or a dead magnet."
+                }
                 return
             }
-            player = iOSPlayerLaunch(url: pick.url, title: magnet.name ?? pick.fileName)
+            guard !Task.isCancelled else { return }   // sheet closed mid-resolve → don't present the player
+            onPlay(iOSPlayerLaunch(url: pick.url, title: magnet.name ?? pick.fileName))
         }
     }
 }

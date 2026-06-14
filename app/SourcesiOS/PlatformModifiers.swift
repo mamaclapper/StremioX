@@ -46,56 +46,111 @@ extension View {
         #if os(iOS)
         self.fullScreenCover(item: item, content: content)
         #else
-        self.sheet(item: item) { value in
-            content(value)
-                .frame(width: Self.macPlayerCoverSize.width, height: Self.macPlayerCoverSize.height)
-                // Hide the host window's titlebar + toolbar while the player is up, so the nav chrome
-                // hoisted there (back button, title, the .searchable field) cannot float over the video.
-                .background(MacPlayerChromeHider())
-        }
+        // macOS has no fullScreenCover, and a .sheet renders as a separate, mis-positioned window that
+        // floats OUTSIDE the app (titlebar + nav chrome leak above the video, controls under the Dock).
+        // Lift the player to the app window's ROOT via MacPlayerHost; MacRootPlayerOverlay (applied once
+        // at the WindowGroup scene root, ABOVE any sheet) renders it full-window edge-to-edge. The bridge
+        // only mirrors `item` into the host.
+        self.background(MacPlayerCoverBridge(item: item, content: content))
         #endif
     }
-
-    #if os(macOS)
-    /// The near-full-screen size for a macOS media cover: the main screen's visible frame (excludes the
-    /// menu bar / Dock), with a sensible fallback if no screen is reported. Large enough that the player
-    /// fills the window and stops reading as a separate little app.
-    private static var macPlayerCoverSize: CGSize {
-        if let visible = NSScreen.main?.visibleFrame.size, visible.width > 0, visible.height > 0 {
-            return CGSize(width: visible.width, height: visible.height)
-        }
-        return CGSize(width: 1280, height: 800)
-    }
-    #endif
 }
 
 #if os(macOS)
-/// While a player / trailer cover is presented, strip the HOST window's titlebar + toolbar so the
-/// hoisted navigation chrome (back button, title, the Search field) stops floating in a strip above
-/// the video (the macOS "weird middle way"). The sheet covers the content area; this removes the
-/// strip on top. Everything is restored when the cover dismisses, so browsing chrome returns intact.
+/// Holds the macOS player view to present at the app window's ROOT. A SwiftUI `.sheet` on macOS becomes
+/// a separate, mis-positioned window; this singleton lets the deep `platformFullScreenPlayerCover` call
+/// sites hand their player up to `MacRootPlayerOverlay` so it fills the actual app window instead.
+final class MacPlayerHost: ObservableObject {
+    static let shared = MacPlayerHost()
+    @Published var content: AnyView?
+    /// Identity of the cover bridge currently presenting. Several call sites (Search, the detail page,
+    /// Continue-Watching resume) each attach a bridge and all feed THIS one host, so a bridge must only
+    /// ever clear the player IT put up — never one another bridge owns — and a bridge being torn down
+    /// (e.g. its detail page popped while the player was up) must be able to clean up after itself.
+    private var ownerID: UUID?
+    private init() {}
+
+    func present(_ view: AnyView, owner: UUID) {
+        ownerID = owner
+        content = view
+    }
+
+    /// Clear the player only if `owner` is the one currently presenting; a stale bridge tearing down must
+    /// not yank a player a newer bridge owns.
+    func dismiss(owner: UUID) {
+        guard ownerID == owner else { return }
+        ownerID = nil
+        content = nil
+    }
+}
+
+/// Mirrors a player cover's `item` into `MacPlayerHost`: set the binding -> snapshot the player into the
+/// host; clear it (or leave the view tree) -> remove it. A clear background so it lives in the call site's
+/// view tree (so its `onChange` fires when the player closes) without drawing anything itself.
+private struct MacPlayerCoverBridge<Item: Identifiable, C: View>: View {
+    @Binding var item: Item?
+    @ViewBuilder let content: (Item) -> C
+    /// Stable per-instance identity (persisted across re-renders by @State) so the host knows which bridge
+    /// owns the on-screen player and a torn-down bridge clears only its own — see MacPlayerHost.ownerID.
+    @State private var ownerID = UUID()
+    var body: some View {
+        Color.clear
+            .onChange(of: item?.id) { _, _ in sync() }
+            .onAppear { if item != nil { sync() } }
+            // If this bridge leaves the tree while its player is still up (e.g. a detail page popped via a
+            // menu/keyboard path), clear the host so the overlay can't strand a player over the disabled app.
+            .onDisappear { MacPlayerHost.shared.dismiss(owner: ownerID) }
+    }
+    private func sync() {
+        if let item {
+            MacPlayerHost.shared.present(AnyView(content(item)), owner: ownerID)
+        } else {
+            MacPlayerHost.shared.dismiss(owner: ownerID)
+        }
+    }
+}
+
+/// Applied ONCE at the WindowGroup scene root (StremioXiOSApp, macOS only) so it sits ABOVE any sheet
+/// (SignIn / OpenLink) or cover: renders the active MacPlayerHost player full-window over the dimmed +
+/// disabled app, and hides the window titlebar while it is up so no nav chrome floats over the video.
+/// Full-window edge-to-edge, matching the v0.1.6 WebView build. The macOS twin of the tvOS root player.
+struct MacRootPlayerOverlay: ViewModifier {
+    @ObservedObject private var host = MacPlayerHost.shared
+    func body(content: Content) -> some View {
+        ZStack {
+            content
+                .opacity(host.content == nil ? 1 : 0)
+                .disabled(host.content != nil)
+            if let player = host.content {
+                player
+                    .ignoresSafeArea()
+                    .background(MacPlayerChromeHider())
+            }
+        }
+    }
+}
+
+/// While the root player overlay is up, hide the window's title + toolbar so the hoisted nav chrome
+/// (back button, title, the Search field) cannot float in a strip above the video. Restored on dismiss.
+/// Deliberately does NOT touch `styleMask` / `.fullSizeContentView`: reassigning the styleMask on restore
+/// collapsed the window to its minimum size (observed on-device). Only title + toolbar visibility are
+/// toggled, which leaves a thin traffic-light strip at top but never resizes the window.
 private struct MacPlayerChromeHider: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
-        // The view is hosted in the SHEET window. A SwiftUI macOS .sheet is NOT an attached NSWindow
-        // sheet, so .sheetParent is nil; the chrome we need to hide lives on the MAIN titled app window.
-        // Find that window directly (the titled, visible window that is not this sheet). Defer one
-        // runloop so the window hierarchy is attached.
+        let c = context.coordinator
+        // The window isn't attached yet, so defer one runloop turn to find + mutate it. If the view is
+        // dismantled BEFORE this runs (rapid present-then-dismiss in the same cycle), `c.cancelled` is
+        // already set, so we bail without hiding the titlebar — otherwise we'd hide it with nothing left
+        // to restore it and the window would lose its titlebar permanently.
         DispatchQueue.main.async { [weak view] in
-            let sheetWindow = view?.window
-            let host = NSApp.windows.first { w in
-                w != sheetWindow && w.isVisible && w.styleMask.contains(.titled)
-            } ?? sheetWindow
-            guard let host else { return }
-            let c = context.coordinator
+            guard !c.cancelled, let host = view?.window else { return }
             c.host = host
-            c.savedStyleMask = host.styleMask
             c.savedTitleVisibility = host.titleVisibility
             c.savedTitlebarTransparent = host.titlebarAppearsTransparent
             c.savedToolbarVisible = host.toolbar?.isVisible
             host.titleVisibility = .hidden
             host.titlebarAppearsTransparent = true
-            host.styleMask.insert(.fullSizeContentView)
             host.toolbar?.isVisible = false
         }
         return view
@@ -104,10 +159,10 @@ private struct MacPlayerChromeHider: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 
     static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.cancelled = true   // stops a not-yet-run makeNSView async block from hiding the titlebar
         guard let host = coordinator.host else { return }
         host.titleVisibility = coordinator.savedTitleVisibility
         host.titlebarAppearsTransparent = coordinator.savedTitlebarTransparent
-        host.styleMask = coordinator.savedStyleMask
         if let v = coordinator.savedToolbarVisible { host.toolbar?.isVisible = v }
     }
 
@@ -115,7 +170,7 @@ private struct MacPlayerChromeHider: NSViewRepresentable {
 
     final class Coordinator {
         var host: NSWindow?
-        var savedStyleMask: NSWindow.StyleMask = []
+        var cancelled = false
         var savedTitleVisibility: NSWindow.TitleVisibility = .visible
         var savedTitlebarTransparent = false
         var savedToolbarVisible: Bool?
