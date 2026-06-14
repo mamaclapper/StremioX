@@ -551,9 +551,13 @@ enum StreamRanking {
     /// Everything a switcher row should say about a source: parsed tags
     /// (resolution, remux/web class, DV/HDR, audio, codec, cached) and the file
     /// size when the add-on includes one.
-    static func sourceDetail(_ s: CoreStream) -> (tags: String, size: String?) {
+    /// The flavour tags WITHOUT the resolution label: Remux · HDR · Atmos · HEVC · Cached (+ a junk
+    /// class when the source ranks at the bottom). For rows that show the resolution *separately* —
+    /// the iOS/Mac source row renders it as a prominent badge, so repeating it in the tag line read
+    /// as a doubled "4K · 4K · HDR". The in-player lists, which have no badge, use `sourceDetail`.
+    static func flavorTags(_ s: CoreStream) -> [String] {
         let t = qualityText(s)
-        var tags: [String] = [qualityLabel(s)]
+        var tags: [String] = []
         if t.contains("remux") { tags.append("Remux") }
         else if t.contains("bluray") || t.contains("blu-ray") { tags.append("BluRay") }
         else if t.contains("web") { tags.append("WEB") }
@@ -567,13 +571,23 @@ enum StreamRanking {
         else if t.contains("av1") { tags.append("AV1") }
         if isCached(s, t) { tags.append("Cached") }
         if let junk = junkClass(t) { tags.append(junk) }   // why this source sits at the bottom
-        var size: String?
+        return tags
+    }
+
+    /// The parsed file size ("12.4 GB" / "850 MB"), or nil when the add-on didn't advertise one.
+    static func sizeText(_ s: CoreStream) -> String? {
+        let t = qualityText(s)
         if let m = firstMatch(t, #"(\d+(?:\.\d+)?)\s*(gb|gib)"#) {
-            size = m.uppercased().replacingOccurrences(of: "GIB", with: "GB")
+            return m.uppercased().replacingOccurrences(of: "GIB", with: "GB")
         } else if let m = firstMatch(t, #"(\d+(?:\.\d+)?)\s*(mb|mib)"#) {
-            size = m.uppercased().replacingOccurrences(of: "MIB", with: "MB")
+            return m.uppercased().replacingOccurrences(of: "MIB", with: "MB")
         }
-        return (tags.joined(separator: " · "), size)
+        return nil
+    }
+
+    static func sourceDetail(_ s: CoreStream) -> (tags: String, size: String?) {
+        let tags = [qualityLabel(s)] + flavorTags(s)
+        return (tags.joined(separator: " · "), sizeText(s))
     }
 
     /// Explicit numeric resolution token ("1080p", "2160p", ...) parsed boundary-checked.

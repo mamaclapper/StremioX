@@ -1468,7 +1468,8 @@ private struct iOSStreamLabel: View {
 
     var body: some View {
         let quality = StreamRanking.qualityLabel(stream)        // "4K" / "1080p" / "Best"
-        let detail = StreamRanking.sourceDetail(stream)          // parsed (tags, size) — NOT the raw blurb
+        let flavors = StreamRanking.flavorTags(stream)           // flavour only — quality is the badge below
+        let size = StreamRanking.sizeText(stream)
         return HStack(alignment: .top, spacing: Theme.Space.md) {
             Image(systemName: enabled ? (stream.isTorrent ? "arrow.down.circle.fill" : "play.circle.fill") : "lock.circle")
                 .font(.system(size: 26))
@@ -1479,26 +1480,32 @@ private struct iOSStreamLabel: View {
                     badge(addon.uppercased())
                     if stream.isTorrent { badge("TORRENT") }
                 }
-                // Parsed flavour tags + size — the clean line tvOS shows, not the add-on's raw dump.
-                HStack(spacing: 8) {
-                    Text(detail.tags)
-                        .font(Theme.Typography.label)
-                        .foregroundStyle(enabled ? Theme.Palette.textPrimary : Theme.Palette.textTertiary)
-                        .lineLimit(1)
-                    if let size = detail.size {
-                        Text(size)
-                            .font(Theme.Typography.label)
-                            .foregroundStyle(Theme.Palette.textTertiary)
-                            .lineLimit(1)
+                // Parsed flavour tags + size — the clean line tvOS shows, minus the resolution (it is
+                // the prominent badge above), so the row never reads as a doubled "4K · 4K · HDR".
+                if !flavors.isEmpty || size != nil {
+                    HStack(spacing: 8) {
+                        if !flavors.isEmpty {
+                            Text(flavors.joined(separator: " · "))
+                                .font(Theme.Typography.label)
+                                .foregroundStyle(enabled ? Theme.Palette.textPrimary : Theme.Palette.textTertiary)
+                                .lineLimit(1)
+                        }
+                        if let size {
+                            Text(size)
+                                .font(Theme.Typography.label)
+                                .foregroundStyle(Theme.Palette.textTertiary)
+                                .lineLimit(1)
+                        }
                     }
                 }
-                // One trimmed human-readable line for context (the release title), collapsed to a
-                // single line so a verbose multi-line add-on blurb can't bloat the row.
+                // The release title for human context. Allowed two lines so the fuller release name
+                // shows (people want the detail) while a verbose multi-line add-on blurb still can't
+                // run away — `cleanTitle` already keeps only the first line of the add-on's name.
                 if let title = cleanTitle {
                     Text(title)
                         .font(Theme.Typography.label)
                         .foregroundStyle(Theme.Palette.textSecondary)
-                        .lineLimit(1).truncationMode(.middle)
+                        .lineLimit(2).truncationMode(.tail)
                 }
             }
             Spacer(minLength: 0)
