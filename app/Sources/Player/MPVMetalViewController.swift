@@ -50,7 +50,11 @@ final class MPVMetalViewController: PlatformViewController {
     /// NOTE: mpv's own target-colorspace-hint must stay OFF here. It is unsupported
     /// on the Metal/MoltenVK backend and known to crash it (double free); the app
     /// does the HDR signalling itself in syncDisplayDynamicRange.
-    private var appliedDynamicRange: ContentDynamicRange = .sdr
+    /// The dynamic range currently applied to the output chain, or nil = "unknown, force a fresh apply".
+    /// Reset to nil on every file load + teardown so the FIRST re-evaluation of a new file always applies
+    /// (the guard `range != appliedDynamicRange` can never be swallowed by a stale value), which is what
+    /// makes an in-place HDR episode switch reliably re-enter HDR — and correctly drop HDR->SDR too.
+    private var appliedDynamicRange: ContentDynamicRange? = nil
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -357,6 +361,10 @@ final class MPVMetalViewController: PlatformViewController {
         checkError(mpv_initialize(mpv))
         
         mpv_observe_property(mpv, 0, MPVProperty.videoParamsSigPeak, MPV_FORMAT_DOUBLE)
+        // Also observe the transfer characteristic (gamma): HLG content can sit at sig-peak ~1.0, so the
+        // sig-peak observer alone never flips it to HDR. A late gamma settle (pq/hlg arriving after the
+        // first sig-peak event on an in-place switch) re-drives the dynamic-range apply.
+        mpv_observe_property(mpv, 0, MPVProperty.videoParamsGamma, MPV_FORMAT_STRING)
         mpv_observe_property(mpv, 0, MPVProperty.pausedForCache, MPV_FORMAT_FLAG)
         mpv_observe_property(mpv, 0, MPVProperty.timePos, MPV_FORMAT_DOUBLE)
         mpv_observe_property(mpv, 0, MPVProperty.duration, MPV_FORMAT_DOUBLE)
@@ -451,7 +459,7 @@ final class MPVMetalViewController: PlatformViewController {
         // detached here, so HDRDisplayMode falls back to the app's window.
         HDRDisplayMode.reset(in: viewIfLoaded?.window)
 #endif
-        appliedDynamicRange = .sdr
+        appliedDynamicRange = nil
         guard let handle = mpv else { return }
         // Nil the handle SYNCHRONOUSLY so exactly one owner destroys it: deinit's safety net
         // sees nil (no double terminate when dealloc beats the queued block), the event drain
@@ -492,14 +500,16 @@ final class MPVMetalViewController: PlatformViewController {
         live: Bool = false
     ) {
         // Re-arm HDR detection for THIS file. appliedDynamicRange otherwise persists from the previous
-        // file (only stop() clears it), so an in-place episode / source switch left it stale and the
-        // sig-peak observer's `range != appliedDynamicRange` guard SKIPPED re-applying the colorspace —
-        // the new (HDR) episode then kept rendering in the previous SDR output (dull) until a full replay
-        // rebuilt the player. That is the random "an auto-advanced / skipped episode is washed out" report
-        // on iOS and tvOS. Resetting to .sdr WITHOUT touching the live layer colorspace lets the new
-        // file's sig-peak event re-apply the correct range; a same-range file keeps its correct tag, so
-        // nothing flickers. (HDR can only be verified on a real HDR display, not the Simulator.)
-        appliedDynamicRange = .sdr
+        // file, so an in-place episode / source switch left it stale and the guard SKIPPED re-applying the
+        // colorspace — the new (HDR) episode then kept rendering in the previous SDR output (dull) until a
+        // full replay rebuilt the player. Resetting to the nil SENTINEL (not .sdr) means the next
+        // re-evaluation ALWAYS applies the new file's true range (nil != any real range), so an HDR->HDR,
+        // HDR->SDR, or SDR->HDR switch all re-tag correctly. The re-evaluation no longer depends on the
+        // value-coalesced sig-peak property event firing (two same-mastering-peak HDR episodes fire none):
+        // MPV_EVENT_VIDEO_RECONFIG drives reapplyDynamicRange() on every new file. This was the "~2 of 3
+        // auto-advanced / skipped episodes are washed out" report. (HDR is only verifiable on a real HDR
+        // display, not the Simulator.)
+        appliedDynamicRange = nil
         var args = [url.absoluteString]
         var options = [String]()
 
@@ -590,6 +600,16 @@ final class MPVMetalViewController: PlatformViewController {
     /// colorspace tag, and on tvOS the TV is asked to switch into HDR mode (which
     /// is what lights the TV's HDR badge). Runs on the main thread from the
     /// sig-peak observer, once per video reconfigure.
+    /// Re-derive the dynamic range from the CURRENTLY decoded video params and apply it. Used by the
+    /// gamma observer and MPV_EVENT_VIDEO_RECONFIG, neither of which carries a sig-peak value, so it
+    /// reads sig-peak fresh. Unlike the sig-peak property-change observer this does NOT depend on a value
+    /// delta, so it re-applies HDR on an in-place episode switch even when the new file's mastering peak
+    /// equals the previous one's (mpv coalesces equal property values and fires no change event).
+    private func reapplyDynamicRange() {
+        guard mpv != nil else { return }
+        syncDisplayDynamicRange(sigPeak: getDouble(MPVProperty.videoParamsSigPeak))
+    }
+
     private func syncDisplayDynamicRange(sigPeak: Double) {
         guard let handle = mpv else { return }
         let gamma = getString(MPVProperty.videoParamsGamma) ?? ""
@@ -926,6 +946,13 @@ final class MPVMetalViewController: PlatformViewController {
                                     self.playDelegate?.propertyChange(mpv: mpv, propertyName: propertyName, data: sigPeak)
                                 }
                             }
+                        case MPVProperty.videoParamsGamma:
+                            // Gamma settled (e.g. HLG, or a late pq on an in-place switch). Re-derive the
+                            // range from the current params; reapplyDynamicRange reads sig-peak fresh.
+                            DispatchQueue.main.async { [weak self] in
+                                guard let self, self.mpv != nil else { return }
+                                self.reapplyDynamicRange()
+                            }
                         case MPVProperty.pausedForCache:
                             let buffering = UnsafePointer<Bool>(OpaquePointer(property.data))?.pointee ?? true
                             self.emit(propertyName, buffering)
@@ -954,6 +981,16 @@ final class MPVMetalViewController: PlatformViewController {
                             self.emit(propertyName, nil)
                         default: break
                         }
+                    }
+                case MPV_EVENT_VIDEO_RECONFIG:
+                    // The video output was (re)configured for the now-current file/params. This EVENT is
+                    // not value-coalesced like the sig-peak property observer, so it fires reliably on
+                    // every in-place episode switch even when two HDR episodes share a mastering peak —
+                    // exactly the case that left ~2 of 3 switches dull. Re-derive + re-apply HDR from the
+                    // freshly settled params (the nil sentinel set in loadFile guarantees it isn't swallowed).
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.mpv != nil else { return }
+                        self.reapplyDynamicRange()
                     }
                 case MPV_EVENT_END_FILE:
                     // A file finished, if it ENDED IN ERROR (couldn't open: dead/uncached link,
