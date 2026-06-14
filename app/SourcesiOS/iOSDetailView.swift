@@ -163,11 +163,18 @@ struct iOSDetailView: View {
                         } else {
                             // The Sources action in the hero row scrolls to this anchor.
                             hero(width: geo.size.width) { withAnimation { proxy.scrollTo(Self.sourcesAnchor, anchor: .top) } }
-                            if type == "series" {
-                                episodeList
-                            } else {
-                                sourceSection.id(Self.sourcesAnchor)
+                            // #9: on a wide iPad/Mac window keep the hero full-bleed but cap the
+                            // source-heavy content to a readable column and center it (long lines hurt
+                            // readability). iPhone (and any narrow width) stays full-width as before.
+                            Group {
+                                if type == "series" {
+                                    episodeList
+                                } else {
+                                    sourceSection.id(Self.sourcesAnchor)
+                                }
                             }
+                            .frame(maxWidth: geo.size.width > 700 ? 900 : .infinity)
+                            .frame(maxWidth: .infinity)
                         }
                     }
                     .padding(.bottom, Theme.Space.xl)
@@ -1000,6 +1007,9 @@ struct iOSEpisodeStreams: View {
                     play: { stream, url in Task { await play(stream, url: url) } }
                 )
                 .padding(.horizontal, Theme.Space.md)
+                // #9: cap the source list to a readable column, centered, on wide iPad/Mac windows.
+                .frame(maxWidth: geo.size.width > 700 ? 900 : .infinity)
+                .frame(maxWidth: .infinity)
             }
             .padding(.bottom, Theme.Space.xl)
             .frame(width: geo.size.width, alignment: .leading)
